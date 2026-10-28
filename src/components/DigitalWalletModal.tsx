@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect } from "react";
-import { UserProfile, CurrencyCode, UserDigitalWallet, WithdrawalMethod, WalletTransaction } from "../types";
+import { UserProfile, CurrencyCode, UserDigitalWallet, WithdrawalMethod, WalletTransaction, OwnerQrAccountConfig, AccountUploadedFile } from "../types";
 import { 
   Wallet, 
   X, 
@@ -25,7 +25,10 @@ import {
   Zap,
   Globe,
   DollarSign,
-  Trash2
+  Trash2,
+  Upload,
+  FileText,
+  Download
 } from "lucide-react";
 import { isSitePublishedLive } from "../utils/syncEngine";
 import { 
@@ -86,6 +89,8 @@ export const DigitalWalletModal: React.FC<DigitalWalletModalProps> = ({
   const [newMethodIdentifier, setNewMethodIdentifier] = useState("");
   const [newMethodHolderName, setNewMethodHolderName] = useState(currentUser.name);
   const [newMethodBranch, setNewMethodBranch] = useState("");
+  const [newMethodQrDataUrl, setNewMethodQrDataUrl] = useState<string>("");
+  const [newMethodUploadedFiles, setNewMethodUploadedFiles] = useState<AccountUploadedFile[]>([]);
   const [payoutCountry, setPayoutCountry] = useState<string>("Nepal");
   const [withdrawSuccessMsg, setWithdrawSuccessMsg] = useState<string | null>(null);
   const [withdrawError, setWithdrawError] = useState<string | null>(null);
@@ -109,6 +114,31 @@ export const DigitalWalletModal: React.FC<DigitalWalletModalProps> = ({
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const [copiedAddress, setCopiedAddress] = useState(false);
 
+  // Owner QR Account (Automatic Real-Money Wire Strictly in Nepali Currency NPR ₨) States
+  const [ownerQrProvider, setOwnerQrProvider] = useState<string>(
+    wallet.ownerQrAccount?.qrProviderName || ""
+  );
+  const [ownerQrAccountId, setOwnerQrAccountId] = useState<string>(
+    wallet.ownerQrAccount?.qrAccountId || ""
+  );
+  const [ownerQrHolderName, setOwnerQrHolderName] = useState<string>(
+    wallet.ownerQrAccount?.accountHolderName || currentUser.name
+  );
+  const ownerQrCurrency: CurrencyCode = "NPR";
+  const [ownerQrImageDataUrl, setOwnerQrImageDataUrl] = useState<string>(
+    wallet.ownerQrAccount?.qrImageDataUrl || ""
+  );
+  const [ownerQrSavedMsg, setOwnerQrSavedMsg] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (wallet.ownerQrAccount) {
+      setOwnerQrProvider(wallet.ownerQrAccount.qrProviderName);
+      setOwnerQrAccountId(wallet.ownerQrAccount.qrAccountId);
+      setOwnerQrHolderName(wallet.ownerQrAccount.accountHolderName);
+      setOwnerQrImageDataUrl(wallet.ownerQrAccount.qrImageDataUrl || "");
+    }
+  }, [wallet.ownerQrAccount]);
+
   // Setup video stream if camera scanner turned on
   useEffect(() => {
     let stream: MediaStream | null = null;
@@ -122,7 +152,7 @@ export const DigitalWalletModal: React.FC<DigitalWalletModalProps> = ({
           setCameraError(null);
         })
         .catch(() => {
-          setCameraError("Camera permission not granted. You can use the instant QR scan simulator below.");
+          setCameraError("Camera permission not granted. Allow camera access to scan live QR codes.");
         });
     }
 
@@ -134,6 +164,85 @@ export const DigitalWalletModal: React.FC<DigitalWalletModalProps> = ({
   }, [scannerActive, activeTab]);
 
   if (!isOpen) return null;
+
+  const handleUploadOwnerQrImage = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = () => {
+      if (typeof reader.result === "string") {
+        setOwnerQrImageDataUrl(reader.result);
+      }
+    };
+    reader.readAsDataURL(file);
+  };
+
+  const handleUploadNewMethodQr = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = () => {
+      if (typeof reader.result === "string") {
+        setNewMethodQrDataUrl(reader.result);
+      }
+    };
+    reader.readAsDataURL(file);
+  };
+
+  const handleUploadNewMethodFiles = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = Array.from(e.target.files || []);
+    files.forEach((file) => {
+      const reader = new FileReader();
+      reader.onload = () => {
+        if (typeof reader.result === "string") {
+          const entry: AccountUploadedFile = {
+            id: `mth-doc-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+            name: file.name,
+            mimeType: file.type || "application/octet-stream",
+            sizeBytes: file.size,
+            kind: file.type.startsWith("image/") ? "image" : "document",
+            dataUrl: reader.result,
+            uploadedAt: new Date().toLocaleDateString("en-US", {
+              year: "numeric",
+              month: "short",
+              day: "numeric",
+            }),
+          };
+          setNewMethodUploadedFiles((prev) => [...prev, entry]);
+        }
+      };
+      reader.readAsDataURL(file);
+    });
+    e.target.value = "";
+  };
+
+  const handleSaveOwnerQrAccount = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!ownerQrProvider.trim() && !ownerQrImageDataUrl) {
+      return;
+    }
+    const nextConfig: OwnerQrAccountConfig = {
+      accountHolderName: ownerQrHolderName.trim() || currentUser.name,
+      qrProviderName: ownerQrProvider.trim() || "Owner Nepali Currency QR Account",
+      qrAccountId: ownerQrAccountId.trim() || "Direct Nepali NPR QR",
+      qrImageDataUrl: ownerQrImageDataUrl || undefined,
+      currency: "NPR",
+      autoWireEnabled: true,
+      updatedAt: new Date().toLocaleDateString("en-US", {
+        year: "numeric",
+        month: "short",
+        day: "numeric",
+      }),
+    };
+    onUpdateWallet({
+      ...wallet,
+      ownerQrAccount: nextConfig,
+    });
+    setOwnerQrSavedMsg(
+      `Saved! Every 3% commission and owner earning automatically converts and wires in Nepali Currency (NPR ₨) directly to ${nextConfig.qrProviderName} (${nextConfig.accountHolderName}).`
+    );
+    setTimeout(() => setOwnerQrSavedMsg(null), 5000);
+  };
 
   // Calculate Net Worth across all currency slots converted to preferred currency
   const totalNetWorthUsd = Object.entries(wallet.currencySlots).reduce((sum, [curr, amt]) => {
@@ -194,7 +303,7 @@ export const DigitalWalletModal: React.FC<DigitalWalletModalProps> = ({
     }
 
     const newMethod: WithdrawalMethod = {
-      id: `mth-${Date.now()}`,
+      id: `wm-user-${Date.now()}`,
       type: newMethodType,
       providerName: newMethodProvider.trim(),
       accountIdentifier: newMethodIdentifier.trim(),
@@ -203,6 +312,8 @@ export const DigitalWalletModal: React.FC<DigitalWalletModalProps> = ({
       currency: selectedSlotForWithdraw,
       isDefault: wallet.withdrawalMethods.length === 0,
       verifiedAt: "User-Added Real-Money Payout Account",
+      qrImageDataUrl: newMethodQrDataUrl || undefined,
+      uploadedFiles: newMethodUploadedFiles.length > 0 ? newMethodUploadedFiles : undefined,
     };
 
     const updatedWallet: UserDigitalWallet = {
@@ -215,6 +326,8 @@ export const DigitalWalletModal: React.FC<DigitalWalletModalProps> = ({
     setNewMethodProvider("");
     setNewMethodIdentifier("");
     setNewMethodBranch("");
+    setNewMethodQrDataUrl("");
+    setNewMethodUploadedFiles([]);
     setIsAddingNewMethod(false);
     setWithdrawError(null);
   };
@@ -737,7 +850,7 @@ export const DigitalWalletModal: React.FC<DigitalWalletModalProps> = ({
                     <div>
                       <h4 className="text-sm font-bold text-neutral-200">Camera Scanner Ready</h4>
                       <p className="text-xs text-neutral-400 max-w-sm mt-1">
-                        Turn on the camera to scan physical QR codes in workshops, or use the 1-click test QR presets below to pay.
+                        Turn on the camera to scan verified bank and digital wallet QR codes for real-money settlement.
                       </p>
                     </div>
                   </div>
@@ -867,24 +980,32 @@ export const DigitalWalletModal: React.FC<DigitalWalletModalProps> = ({
                 </div>
 
                 <div className="flex flex-col sm:flex-row items-center gap-5">
-                  <div className="flex h-36 w-36 items-center justify-center rounded-2xl bg-white p-2.5 shadow-xl shrink-0">
-                    {/* SVG generated QR pattern */}
-                    <svg viewBox="0 0 100 100" className="w-full h-full text-black fill-current">
-                      <rect x="0" y="0" width="30" height="30" />
-                      <rect x="5" y="5" width="20" height="20" fill="white" />
-                      <rect x="10" y="10" width="10" height="10" />
-                      <rect x="70" y="0" width="30" height="30" />
-                      <rect x="75" y="5" width="20" height="20" fill="white" />
-                      <rect x="80" y="10" width="10" height="10" />
-                      <rect x="0" y="70" width="30" height="30" />
-                      <rect x="5" y="75" width="20" height="20" fill="white" />
-                      <rect x="10" y="80" width="10" height="10" />
-                      <rect x="40" y="10" width="20" height="10" />
-                      <rect x="35" y="35" width="30" height="30" />
-                      <rect x="70" y="40" width="15" height="10" />
-                      <rect x="45" y="75" width="20" height="15" />
-                      <rect x="75" y="75" width="15" height="15" />
-                    </svg>
+                  <div className="flex h-36 w-36 items-center justify-center rounded-2xl bg-white p-2.5 shadow-xl shrink-0 overflow-hidden">
+                    {currentUser.isSiteOwner && wallet.ownerQrAccount?.qrImageDataUrl ? (
+                      <img
+                        src={wallet.ownerQrAccount.qrImageDataUrl}
+                        alt="Owner QR Account"
+                        className="w-full h-full object-contain"
+                      />
+                    ) : (
+                      /* SVG generated QR pattern */
+                      <svg viewBox="0 0 100 100" className="w-full h-full text-black fill-current">
+                        <rect x="0" y="0" width="30" height="30" />
+                        <rect x="5" y="5" width="20" height="20" fill="white" />
+                        <rect x="10" y="10" width="10" height="10" />
+                        <rect x="70" y="0" width="30" height="30" />
+                        <rect x="75" y="5" width="20" height="20" fill="white" />
+                        <rect x="80" y="10" width="10" height="10" />
+                        <rect x="0" y="70" width="30" height="30" />
+                        <rect x="5" y="75" width="20" height="20" fill="white" />
+                        <rect x="10" y="80" width="10" height="10" />
+                        <rect x="40" y="10" width="20" height="10" />
+                        <rect x="35" y="35" width="30" height="30" />
+                        <rect x="70" y="40" width="15" height="10" />
+                        <rect x="45" y="75" width="20" height="15" />
+                        <rect x="75" y="75" width="15" height="15" />
+                      </svg>
+                    )}
                   </div>
 
                   <div className="space-y-2 text-xs">
@@ -893,9 +1014,11 @@ export const DigitalWalletModal: React.FC<DigitalWalletModalProps> = ({
                       Account ID: <span className="font-mono text-neutral-300">{wallet.vaultAccountId || wallet.walletId}</span>
                     </div>
                     <p className="text-neutral-400 text-[11px] leading-relaxed">
-                      Anyone can scan this code using the IdeaVault app scanner to transfer funds into your wallet slots in NPR, USD, EUR, INR, etc.
+                      {currentUser.isSiteOwner
+                        ? "Owner Automatic Wire Active: Every 3% marketplace commission and owner earning converts and wires strictly in Nepali Currency (NPR ₨) to your uploaded Owner QR Account."
+                        : "Anyone can scan your QR code using a licensed banking or digital wallet app to send verified real-money payouts."}
                     </p>
-                    <div className="pt-1 flex items-center gap-2">
+                    <div className="pt-1 flex flex-wrap items-center gap-2">
                       <button
                         onClick={copyVaultId}
                         className="rounded-lg bg-neutral-800 hover:bg-neutral-700 text-neutral-200 px-3 py-1.5 text-xs font-semibold flex items-center gap-1.5"
@@ -903,6 +1026,16 @@ export const DigitalWalletModal: React.FC<DigitalWalletModalProps> = ({
                         <Copy className="h-3.5 w-3.5" />
                         <span>{copiedAddress ? "Copied!" : "Copy Vault ID"}</span>
                       </button>
+                      {currentUser.isSiteOwner && (
+                        <button
+                          type="button"
+                          onClick={() => setActiveTab("withdraw")}
+                          className="rounded-lg bg-amber-500 hover:bg-amber-400 text-neutral-950 px-3 py-1.5 text-xs font-bold flex items-center gap-1.5"
+                        >
+                          <QrCode className="h-3.5 w-3.5" />
+                          <span>Configure Owner QR Auto-Wire</span>
+                        </button>
+                      )}
                     </div>
                   </div>
                 </div>
@@ -913,6 +1046,127 @@ export const DigitalWalletModal: React.FC<DigitalWalletModalProps> = ({
           {/* TAB 3: WITHDRAW TO BANK OR DIGITAL WALLET */}
           {activeTab === "withdraw" && (
             <div className="space-y-6">
+              {/* OWNER QR ACCOUNT AUTOMATIC WIRE PANEL */}
+              {currentUser.isSiteOwner && (
+                <form
+                  onSubmit={handleSaveOwnerQrAccount}
+                  className="rounded-2xl border border-amber-500/40 bg-neutral-900/90 p-5 space-y-4"
+                >
+                  <div className="flex flex-wrap items-start justify-between gap-3 border-b border-neutral-800 pb-3.5">
+                    <div>
+                      <h3 className="text-sm sm:text-base font-bold text-neutral-100 flex items-center gap-2">
+                        <QrCode className="h-4 w-4 text-amber-400 shrink-0" />
+                        <span>Owner QR Account — Automatic Wire in Nepali Currency (NPR ₨)</span>
+                      </h3>
+                      <p className="text-xs text-neutral-400 mt-1">
+                        Upload your personal QR image below. Every 3% platform commission and owner earning converts and wires strictly in <strong className="text-amber-300">Nepalese Rupees (NPR ₨)</strong> every single time.
+                      </p>
+                    </div>
+                    <span className="text-xs font-semibold text-emerald-400">
+                      Locked to NPR ₨ Auto-Wire
+                    </span>
+                  </div>
+
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-4 items-start">
+                    {/* QR Image Preview + Upload */}
+                    <div className="flex flex-col items-center justify-center rounded-xl border border-neutral-800 bg-neutral-950 p-4 space-y-3">
+                      <div className="h-32 w-32 rounded-xl bg-white p-2 flex items-center justify-center overflow-hidden">
+                        {ownerQrImageDataUrl ? (
+                          <img
+                            src={ownerQrImageDataUrl}
+                            alt="Uploaded Owner NPR QR"
+                            className="w-full h-full object-contain"
+                          />
+                        ) : (
+                          <QrCode className="h-16 w-16 text-neutral-900" />
+                        )}
+                      </div>
+                      <label className="cursor-pointer rounded-lg bg-amber-500 hover:bg-amber-400 px-3 py-1.5 text-[11px] font-bold text-neutral-950 flex items-center gap-1.5 transition-colors">
+                        <Upload className="h-3.5 w-3.5" />
+                        <span>{ownerQrImageDataUrl ? "Replace My NPR QR" : "Upload My NPR QR Image"}</span>
+                        <input
+                          type="file"
+                          accept="image/*"
+                          onChange={handleUploadOwnerQrImage}
+                          className="hidden"
+                        />
+                      </label>
+                    </div>
+
+                    {/* Owner QR Account Details */}
+                    <div className="md:col-span-2 grid grid-cols-1 sm:grid-cols-2 gap-3">
+                      <div>
+                        <label className="block text-[11px] font-semibold text-neutral-300 mb-1">
+                          Nepali QR Wallet or Bank App Name
+                        </label>
+                        <input
+                          type="text"
+                          value={ownerQrProvider}
+                          onChange={(e) => setOwnerQrProvider(e.target.value)}
+                          placeholder="e.g., eSewa QR, Khalti QR, Fonepay, ConnectIPS, or Your Nepal Bank QR"
+                          className="w-full rounded-xl border border-neutral-700 bg-neutral-950 px-3 py-2 text-xs text-neutral-100 focus:border-amber-500 focus:outline-none"
+                        />
+                      </div>
+
+                      <div>
+                        <label className="block text-[11px] font-semibold text-neutral-300 mb-1">
+                          QR Account ID / Phone / Merchant ID
+                        </label>
+                        <input
+                          type="text"
+                          value={ownerQrAccountId}
+                          onChange={(e) => setOwnerQrAccountId(e.target.value)}
+                          placeholder="Enter your phone number or QR account ID"
+                          className="w-full rounded-xl border border-neutral-700 bg-neutral-950 px-3 py-2 text-xs font-mono text-neutral-100 focus:border-amber-500 focus:outline-none"
+                        />
+                      </div>
+
+                      <div>
+                        <label className="block text-[11px] font-semibold text-neutral-300 mb-1">
+                          Account Holder Name
+                        </label>
+                        <input
+                          type="text"
+                          value={ownerQrHolderName}
+                          onChange={(e) => setOwnerQrHolderName(e.target.value)}
+                          className="w-full rounded-xl border border-neutral-700 bg-neutral-950 px-3 py-2 text-xs text-neutral-100 focus:border-amber-500 focus:outline-none"
+                        />
+                      </div>
+
+                      <div>
+                        <label className="block text-[11px] font-semibold text-neutral-300 mb-1">
+                          Mandatory Wire Currency (Every Time)
+                        </label>
+                        <div className="w-full rounded-xl border border-amber-500/40 bg-neutral-950 px-3 py-2 text-xs font-bold text-amber-300">
+                          🇳🇵 NPR (₨ — Nepalese Rupee · नेपाली रुपैयाँ)
+                        </div>
+                      </div>
+
+                      <div className="sm:col-span-2 flex flex-wrap items-center justify-between gap-2 pt-1">
+                        <span className="text-[11px] text-neutral-400">
+                          {wallet.ownerQrAccount
+                            ? `Active Nepali QR Destination: ${wallet.ownerQrAccount.qrProviderName} · ${wallet.ownerQrAccount.qrAccountId} (NPR ₨)`
+                            : "Upload your QR image above and click Save so every payment wires in Nepali Currency (NPR ₨)."}
+                        </span>
+                        <button
+                          type="submit"
+                          className="rounded-xl bg-amber-500 hover:bg-amber-400 text-neutral-950 font-bold px-4 py-2 text-xs transition-colors cursor-pointer"
+                        >
+                          Save Owner NPR (₨) QR Auto-Wire
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+
+                  {ownerQrSavedMsg && (
+                    <div className="rounded-xl bg-emerald-950/40 border border-emerald-500/40 p-3 text-xs text-emerald-300 flex items-center gap-2">
+                      <CheckCircle2 className="h-4 w-4 shrink-0 text-emerald-400" />
+                      <span>{ownerQrSavedMsg}</span>
+                    </div>
+                  )}
+                </form>
+              )}
+
               <div className="flex flex-wrap items-center justify-between gap-3">
                 <div>
                   <h3 className="text-base font-bold text-neutral-100 flex items-center gap-2">
@@ -1128,12 +1382,85 @@ export const DigitalWalletModal: React.FC<DigitalWalletModalProps> = ({
                       />
                     </div>
 
-                    <div className="flex items-end">
+                    <div className="sm:col-span-3 grid grid-cols-1 sm:grid-cols-2 gap-3 pt-2 border-t border-neutral-800">
+                      {/* Upload QR Image for this Payout Account */}
+                      <div className="rounded-xl border border-neutral-800 bg-neutral-950 p-3 flex items-center justify-between gap-3">
+                        <div className="flex items-center gap-2.5">
+                          {newMethodQrDataUrl ? (
+                            <img
+                              src={newMethodQrDataUrl}
+                              alt="Payout QR"
+                              className="h-10 w-10 rounded bg-white p-0.5 object-contain shrink-0"
+                            />
+                          ) : (
+                            <QrCode className="h-6 w-6 text-sky-400 shrink-0" />
+                          )}
+                          <div>
+                            <div className="font-bold text-neutral-200 text-xs">Account QR Image (Optional)</div>
+                            <div className="text-[10px] text-neutral-400">Upload wallet or bank receive QR</div>
+                          </div>
+                        </div>
+                        <label className="cursor-pointer rounded-lg bg-neutral-800 hover:bg-neutral-700 px-3 py-1.5 text-[11px] font-semibold text-sky-300 flex items-center gap-1.5 shrink-0">
+                          <Upload className="h-3.5 w-3.5" />
+                          <span>{newMethodQrDataUrl ? "Replace QR" : "Upload QR"}</span>
+                          <input
+                            type="file"
+                            accept="image/*"
+                            onChange={handleUploadNewMethodQr}
+                            className="hidden"
+                          />
+                        </label>
+                      </div>
+
+                      {/* Upload Document or Image for this Payout Account */}
+                      <div className="rounded-xl border border-neutral-800 bg-neutral-950 p-3 space-y-2">
+                        <div className="flex items-center justify-between gap-2">
+                          <div>
+                            <div className="font-bold text-neutral-200 text-xs">Upload Account Image / Document</div>
+                            <div className="text-[10px] text-neutral-400">Attach bank/wallet verification image or PDF/doc</div>
+                          </div>
+                          <label className="cursor-pointer rounded-lg bg-neutral-800 hover:bg-neutral-700 px-3 py-1.5 text-[11px] font-semibold text-emerald-300 flex items-center gap-1.5 shrink-0">
+                            <Upload className="h-3.5 w-3.5" />
+                            <span>Upload File</span>
+                            <input
+                              type="file"
+                              multiple
+                              accept="image/*,.pdf,.doc,.docx,.txt"
+                              onChange={handleUploadNewMethodFiles}
+                              className="hidden"
+                            />
+                          </label>
+                        </div>
+                        {newMethodUploadedFiles.length > 0 && (
+                          <div className="flex flex-wrap gap-1.5 pt-1">
+                            {newMethodUploadedFiles.map((f) => (
+                              <span
+                                key={f.id}
+                                className="inline-flex items-center gap-1 rounded bg-neutral-900 border border-neutral-800 px-2 py-0.5 text-[10px] text-neutral-300"
+                              >
+                                <span className="truncate max-w-[120px]">{f.name}</span>
+                                <button
+                                  type="button"
+                                  onClick={() =>
+                                    setNewMethodUploadedFiles((prev) => prev.filter((item) => item.id !== f.id))
+                                  }
+                                  className="text-neutral-500 hover:text-red-400"
+                                >
+                                  <X className="h-3 w-3" />
+                                </button>
+                              </span>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    </div>
+
+                    <div className="sm:col-span-3 flex justify-end">
                       <button
                         type="submit"
-                        className="w-full rounded-xl bg-sky-500 hover:bg-sky-400 text-neutral-950 font-bold py-2 text-xs transition-colors shadow-md cursor-pointer"
+                        className="rounded-xl bg-sky-500 hover:bg-sky-400 text-neutral-950 font-bold px-6 py-2.5 text-xs transition-colors shadow-md cursor-pointer"
                       >
-                        Save Payout Destination
+                        Save Payout Destination &amp; Uploads
                       </button>
                     </div>
                   </div>
@@ -1217,7 +1544,7 @@ export const DigitalWalletModal: React.FC<DigitalWalletModalProps> = ({
                                 : "border-neutral-800 bg-neutral-950 text-neutral-400 hover:border-neutral-700"
                             }`}
                           >
-                            <div className="flex items-center gap-2">
+                            <div className="flex items-center gap-2.5">
                               <input
                                 type="radio"
                                 name="withdrawalMethod"
@@ -1225,15 +1552,25 @@ export const DigitalWalletModal: React.FC<DigitalWalletModalProps> = ({
                                 onChange={() => setSelectedMethodId(m.id)}
                                 className="text-sky-500 focus:ring-sky-500"
                               />
+                              {m.qrImageDataUrl && (
+                                <img
+                                  src={m.qrImageDataUrl}
+                                  alt="Method QR"
+                                  className="h-8 w-8 rounded bg-white p-0.5 object-contain shrink-0"
+                                />
+                              )}
                               <div>
                                 <div className="font-bold text-neutral-200">{m.providerName}</div>
                                 <div className="text-[11px] font-mono text-neutral-400">
-                                  {m.accountIdentifier} • {m.accountHolderName}
+                                  {m.accountIdentifier} · {m.accountHolderName}
+                                  {m.uploadedFiles && m.uploadedFiles.length > 0
+                                    ? ` · ${m.uploadedFiles.length} uploaded file(s)`
+                                    : ""}
                                 </div>
                               </div>
                             </div>
                             <div className="flex items-center gap-2">
-                              <span className="text-[10px] rounded bg-neutral-800 px-1.5 py-0.5 text-neutral-300">
+                              <span className="text-[10px] text-neutral-300">
                                 {m.type === "bank" ? "Bank Account" : "Digital Wallet"}
                               </span>
                               <button
@@ -1346,7 +1683,12 @@ export const DigitalWalletModal: React.FC<DigitalWalletModalProps> = ({
                     </div>
                   ) : (
                     wallet.transactions.map((tx) => {
-                      const isIncoming = tx.type === "sale_received" || tx.type === "royalty_received" || tx.type === "task_payout";
+                      const isIncoming =
+                        tx.type === "sale_received" ||
+                        tx.type === "royalty_received" ||
+                        tx.type === "task_payout" ||
+                        tx.type === "platform_discovery_fee" ||
+                        tx.type === "owner_qr_auto_wire";
                       return (
                         <div key={tx.id} className="p-4 flex flex-wrap items-center justify-between gap-3 text-xs hover:bg-neutral-800/30 transition-colors">
                           <div className="flex items-center gap-3">
@@ -1372,12 +1714,31 @@ export const DigitalWalletModal: React.FC<DigitalWalletModalProps> = ({
                                   {tx.referenceId}
                                 </span>
                               </div>
-                              <div className="text-[11px] text-neutral-400 flex items-center gap-2 mt-0.5">
+                              <div className="text-[11px] text-neutral-400 flex flex-wrap items-center gap-2 mt-0.5">
                                 <span>{tx.counterparty}</span>
-                                <span>•</span>
+                                <span>·</span>
                                 <span>{tx.timestamp}</span>
-                                <span>•</span>
-                                <span className="font-mono text-emerald-400 font-semibold">{tx.status}</span>
+                                {tx.realBankOrQrRefId && (
+                                  <>
+                                    <span>·</span>
+                                    <span className="font-mono text-amber-300">
+                                      Bank/QR Ref: {tx.realBankOrQrRefId}
+                                    </span>
+                                  </>
+                                )}
+                                {tx.paymentProofFile && (
+                                  <>
+                                    <span>·</span>
+                                    <a
+                                      href={tx.paymentProofFile.dataUrl}
+                                      download={tx.paymentProofFile.name}
+                                      className="inline-flex items-center gap-1 text-emerald-400 hover:underline font-semibold"
+                                    >
+                                      <Download className="h-3 w-3" />
+                                      <span>Receipt ({tx.paymentProofFile.name})</span>
+                                    </a>
+                                  </>
+                                )}
                               </div>
                             </div>
                           </div>
@@ -1388,9 +1749,15 @@ export const DigitalWalletModal: React.FC<DigitalWalletModalProps> = ({
                             }`}>
                               {isIncoming ? "+" : "-"}{formatLocalCurrency(tx.amount, tx.currency)}
                             </div>
-                            <div className="text-[10px] font-mono text-neutral-500">
-                              {tx.txHash}
-                            </div>
+                            {tx.wiredOwnerNprAmount ? (
+                              <div className="text-[10px] font-mono text-amber-300">
+                                Wired in NPR: ₨{tx.wiredOwnerNprAmount.toLocaleString()}
+                              </div>
+                            ) : (
+                              <div className="text-[10px] font-mono text-neutral-500">
+                                {tx.txHash}
+                              </div>
+                            )}
                           </div>
                         </div>
                       );

@@ -117,7 +117,7 @@ export const ConnectionStatusModal: React.FC<ConnectionStatusModalProps> = ({
                   </span>
                 </div>
                 <p className="text-[11px] text-neutral-400 mt-0.5">
-                  Node.js fullstack service responding cleanly. iFrame framing allowed for AI Studio preview.
+                  Node.js fullstack service responding cleanly on {typeof window !== "undefined" ? window.location.origin : "live origin"}.
                 </p>
                 {health && (
                   <div className="mt-1.5 flex items-center gap-3 text-[11px] font-mono text-neutral-400">

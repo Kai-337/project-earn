@@ -7,7 +7,9 @@ import {
   Task, 
   CurrencyCode, 
   BuyerMatch,
-  CopyrightFiling 
+  CopyrightFiling,
+  AccountCreationType,
+  AccountUploadedFile
 } from "./types";
 import { INITIAL_IDEAS, INITIAL_USERS, CATEGORIES_LIST } from "./data/seedData";
 import { Navbar } from "./components/Navbar";
@@ -36,12 +38,15 @@ import { ConnectionStatusModal } from "./components/ConnectionStatusModal";
 import { CompanyLandingWebsite } from "./components/CompanyLandingWebsite";
 import { UnLegalAndAntiHackCertModal } from "./components/UnLegalAndAntiHackCertModal";
 import { EthicalCertifiedModal } from "./components/EthicalCertifiedModal";
-import { WebsiteLinkModal } from "./components/WebsiteLinkModal";
 import { LawAndSafetyModal } from "./components/LawAndSafetyModal";
 import { QrScannerModal } from "./components/QrScannerModal";
+import { LegalDocumentsCenterModal } from "./components/LegalDocumentsCenterModal";
+import { PromoVideoStudioModal } from "./components/PromoVideoStudioModal";
+import { SearchEngineGuideModal } from "./components/SearchEngineGuideModal";
+import { IdeaVaultLogo } from "./components/IdeaVaultLogo";
 import { ScamFraudAlert, AntiHackDefenseStatus, SiteCopyrightRegistration, UserDigitalWallet, WalletTransaction } from "./types";
 import { OFFICIAL_SITE_COPYRIGHT, INITIAL_ANTI_HACK_STATE } from "./data/seedData";
-import { fetchLiveSyncState, pushLiveSyncUpdate, checkServerHealth, getWebsiteLaunchHref, isSitePublishedLive } from "./utils/syncEngine";
+import { fetchLiveSyncState, pushLiveSyncUpdate, checkServerHealth, isSitePublishedLive, syncCleanBrowserUrlPath } from "./utils/syncEngine";
 import { 
   PLATFORM_OWNER_WALLET,
   calculateCommissionBreakdown, 
@@ -73,7 +78,8 @@ import {
   Crown,
   Award,
   Radio,
-  Globe
+  Globe,
+  Mail
 } from "lucide-react";
 
 const CLEAN_PRELAUNCH_STORAGE_KEY = "ideavault_clean_prelaunch_v5";
@@ -88,9 +94,19 @@ function sanitizeUserForLaunchState(u: UserProfile, isPublished: boolean): UserP
       (m.type === "bank" || m.type === "digital_wallet")
   );
 
+  const normalizedOwnerQr = u.wallet?.ownerQrAccount
+    ? {
+        ...u.wallet.ownerQrAccount,
+        currency: "NPR" as CurrencyCode,
+        autoWireEnabled: true,
+      }
+    : undefined;
+
   if (!isPublished) {
     return {
       ...u,
+      uploadedFiles: u.uploadedFiles,
+      receiveQrImageDataUrl: u.receiveQrImageDataUrl,
       balance: 0,
       totalRoyaltiesEarned: 0,
       platformRevenueEarned: 0,
@@ -103,6 +119,7 @@ function sanitizeUserForLaunchState(u: UserProfile, isPublished: boolean): UserP
         isLocked: false,
         currencySlots: { NPR: 0, USD: 0, EUR: 0, INR: 0, GBP: 0, AUD: 0, CAD: 0, JPY: 0, PLN: 0 },
         withdrawalMethods: cleanMethods,
+        ownerQrAccount: normalizedOwnerQr,
         transactions: [],
       },
     };
@@ -110,10 +127,13 @@ function sanitizeUserForLaunchState(u: UserProfile, isPublished: boolean): UserP
 
   return {
     ...u,
+    uploadedFiles: u.uploadedFiles,
+    receiveQrImageDataUrl: u.receiveQrImageDataUrl,
     wallet: u.wallet
       ? {
           ...u.wallet,
           withdrawalMethods: cleanMethods,
+          ownerQrAccount: normalizedOwnerQr,
         }
       : {
           walletId: `VAULT-${u.id}`,
@@ -222,7 +242,20 @@ export default function App() {
     return INITIAL_IDEAS;
   });
 
-  const [activeTab, setActiveTab] = useState<"website" | "feed" | "foryou" | "tasks" | "contracts" | "moderation">("website");
+  const [activeTab, setActiveTab] = useState<"website" | "feed" | "foryou" | "tasks" | "contracts" | "moderation">("foryou");
+  const [isStandaloneWebsiteOpen, setIsStandaloneWebsiteOpen] = useState<boolean>(() => {
+    if (typeof window === "undefined") return false;
+    const p = window.location.pathname;
+    const h = window.location.hash;
+    const s = window.location.search;
+    return (
+      p === "/website" ||
+      p === "/website/" ||
+      h === "#/website" ||
+      h === "#/site" ||
+      s.includes("view=website")
+    );
+  });
   const [selectedCategory, setSelectedCategory] = useState<CategoryType>("All Ideas");
   const [searchQuery, setSearchQuery] = useState("");
 
@@ -251,6 +284,7 @@ export default function App() {
   // New Dedicated Modals
   const [isLegalGuideOpen, setIsLegalGuideOpen] = useState(false);
   const [isCreateAccountOpen, setIsCreateAccountOpen] = useState(false);
+  const [createAccountInitialType, setCreateAccountInitialType] = useState<AccountCreationType>("idea_poster");
   const [isHumanVerifyOpen, setIsHumanVerifyOpen] = useState(false);
   const [isEmailCopyrightOpen, setIsEmailCopyrightOpen] = useState(false);
   const [isLegalCrossCheckOpen, setIsLegalCrossCheckOpen] = useState(false);
@@ -275,20 +309,51 @@ export default function App() {
   const [isQrScannerOpen, setIsQrScannerOpen] = useState(false);
   const [isUnCertOpen, setIsUnCertOpen] = useState(false);
   const [isEthicalCertOpen, setIsEthicalCertOpen] = useState(false);
-  const [isWebsiteLinkOpen, setIsWebsiteLinkOpen] = useState(false);
+  const [isLegalDocsCenterOpen, setIsLegalDocsCenterOpen] = useState(false);
+  const [isPromoVideoOpen, setIsPromoVideoOpen] = useState(false);
+  const [isSeoGuideOpen, setIsSeoGuideOpen] = useState(false);
 
-  // Sync route with custom website URL (/ideavault.ideaspitfall) and hash so website links open directly
+  const openStandaloneWebsite = () => {
+    setIsStandaloneWebsiteOpen(true);
+    syncCleanBrowserUrlPath("/website", true);
+    if (typeof window !== "undefined") {
+      window.scrollTo({ top: 0, behavior: "smooth" });
+    }
+  };
+
+  const enterMarketplaceApp = (targetTab: "foryou" | "feed" | "tasks" | "contracts" = "foryou") => {
+    setIsStandaloneWebsiteOpen(false);
+    setActiveTab(targetTab);
+    syncCleanBrowserUrlPath("/", true);
+    if (typeof window !== "undefined") {
+      window.scrollTo({ top: 0, behavior: "smooth" });
+    }
+  };
+
+  // Sync browser back/forward & direct /website navigation
   useEffect(() => {
     if (typeof window !== "undefined") {
       const checkRoute = () => {
         const h = window.location.hash;
         const p = window.location.pathname;
-        const host = window.location.hostname.toLowerCase();
-        const isCustomDomain = !host.endsWith(".run.app") && host !== "localhost" && host !== "127.0.0.1";
-        if (p.includes("ideavault.ideaspitfall") || h === "#/website" || h === "#/site" || (isCustomDomain && p === "/" && !h)) {
-          setActiveTab("website");
-        } else if (h === "#/feed" || h === "#/app" || h === "#/ideas") {
-          setActiveTab("feed");
+        const s = window.location.search;
+        if (
+          p === "/website" ||
+          p === "/website/" ||
+          h === "#/website" ||
+          h === "#/site" ||
+          s.includes("view=website")
+        ) {
+          setIsStandaloneWebsiteOpen(true);
+          syncCleanBrowserUrlPath("/website", false);
+        } else {
+          setIsStandaloneWebsiteOpen(false);
+          if (h === "#/feed" || h === "#/app" || h === "#/ideas") {
+            setActiveTab("feed");
+          }
+          if (p && p !== "/") {
+            syncCleanBrowserUrlPath("/", false);
+          }
         }
       };
       checkRoute();
@@ -452,7 +517,14 @@ export default function App() {
     );
   };
 
-  const handleScannerPayment = (amount: number, currency: CurrencyCode, description: string, recipient: string) => {
+  const handleScannerPayment = (
+    amount: number,
+    currency: CurrencyCode,
+    description: string,
+    recipient: string,
+    realBankOrQrRefId: string,
+    paymentProofFile: AccountUploadedFile
+  ) => {
     if (!isSitePublishedLive()) {
       setToastMessage({
         type: "info",
@@ -469,8 +541,10 @@ export default function App() {
       description: `Verified QR Payment: ${description}`,
       timestamp: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
       status: "completed",
-      referenceId: `QR-${Date.now()}`,
-      txHash: `0xQR${Math.random().toString(16).slice(2, 10).toUpperCase()}`,
+      referenceId: realBankOrQrRefId,
+      txHash: `QR-${realBankOrQrRefId}`,
+      realBankOrQrRefId,
+      paymentProofFile,
     };
 
     const currentSlotBalance = currentUser.wallet.currencySlots[currency] || 0;
@@ -526,18 +600,18 @@ export default function App() {
       copyrightAssigned: idea.saleModel === "full_buyout",
       payoutCurrency: currency,
       ideatorPayoutAmount: feeData.netSellerUsd,
-      platformFeeRecipient: "IdeaVault Master Vault Multi-Currency Wallet (Medha Koirala)",
+      platformFeeRecipient: "Medha Koirala (Owner QR Account — Automatic Wire)",
       ownerWalletAmountNpr: feeData.platformFeeNpr,
       ownerWalletAmountUsd: feeData.platformFeeUsd,
-      ownerWalletTxnId: `VAULT-QR-${Date.now()}`,
-      ownerWalletStatus: "settled_in_app_wallet",
+      ownerWalletTxnId: `QR-WIRE-${Date.now()}`,
+      ownerWalletStatus: "auto_wired_to_owner_qr",
     };
 
     setIdeas((prev) =>
       prev.map((i) => (i.id === ideaId ? { ...i, status: "under_contract", contract: newContract } : i))
     );
 
-    // Credit creator's wallet currency slot & credit owner's Master Vault
+    // Credit creator's wallet currency slot & automatically wire 3% to Owner's QR Account
     setUsers((prev) =>
       prev.map((u) => {
         if (u.id === idea.creator.id && u.wallet) {
@@ -572,6 +646,9 @@ export default function App() {
           };
         }
         if (u.isSiteOwner && u.wallet) {
+          const qrDest = u.wallet.ownerQrAccount
+            ? `${u.wallet.ownerQrAccount.qrProviderName} (${u.wallet.ownerQrAccount.qrAccountId})`
+            : "Owner Nepali NPR ₨ QR Account";
           return {
             ...u,
             balance: u.balance + feeData.platformFeeUsd,
@@ -580,21 +657,21 @@ export default function App() {
               ...u.wallet,
               currencySlots: {
                 ...u.wallet.currencySlots,
-                USD: Math.round(((u.wallet.currencySlots.USD || 0) + feeData.platformFeeUsd) * 100) / 100,
                 NPR: Math.round(((u.wallet.currencySlots.NPR || 0) + feeData.platformFeeNpr) * 100) / 100,
               },
               transactions: [
                 {
                   id: `TX-OWNER-QR-${Date.now()}`,
-                  type: "platform_discovery_fee",
-                  amount: feeData.platformFeeUsd,
-                  currency: "USD",
-                  counterparty: "IdeaVault QR Scanner Checkout",
-                  description: `3% Discovery Commission for "${idea.title}"`,
+                  type: "owner_qr_auto_wire",
+                  amount: feeData.platformFeeNpr,
+                  currency: "NPR",
+                  counterparty: `Auto-Wired in NPR ₨ ➔ ${qrDest}`,
+                  description: `3% Commission Wired in Nepali Currency (₨${feeData.platformFeeNpr.toLocaleString()} NPR) for "${idea.title}"`,
                   timestamp: "Just now",
                   status: "completed",
-                  referenceId: `DISC-QR-${Date.now()}`,
-                  txHash: `0xDISC${Math.random().toString(16).slice(2, 8).toUpperCase()}`,
+                  referenceId: `NPR-QR-${Date.now()}`,
+                  txHash: `NPRQR${Math.random().toString(16).slice(2, 8).toUpperCase()}`,
+                  wiredOwnerNprAmount: feeData.platformFeeNpr,
                 },
                 ...u.wallet.transactions,
               ],
@@ -607,7 +684,7 @@ export default function App() {
 
     setToastMessage({
       type: "success",
-      text: `QR Scan Pay successful! Acquired "${idea.title}". Funds routed to ideator's wallet slot and 3% settled into Master Vault Wallet!`,
+      text: `QR Scan Pay verified! Acquired "${idea.title}". Creator paid and 3% commission wired in Nepali Currency (₨${feeData.platformFeeNpr.toLocaleString()} NPR) to Owner's QR Account.`,
     });
   };
 
@@ -1047,11 +1124,11 @@ export default function App() {
       copyrightAssigned: isFullBuyout,
       payoutCurrency: targetIdea.creator.preferredCurrency || preferredCurrency,
       ideatorPayoutAmount: feeData.netSellerUsd,
-      platformFeeRecipient: "IdeaVault Master Vault Multi-Currency Wallet (Medha Koirala)",
+      platformFeeRecipient: "Medha Koirala (Owner QR Account — Automatic Wire)",
       ownerWalletAmountNpr: feeData.platformFeeNpr,
       ownerWalletAmountUsd: feeData.platformFeeUsd,
-      ownerWalletTxnId: `VAULT-BUY-${Date.now().toString().slice(-8)}`,
-      ownerWalletStatus: "settled_in_app_wallet",
+      ownerWalletTxnId: `QR-WIRE-${Date.now().toString().slice(-8)}`,
+      ownerWalletStatus: "auto_wired_to_owner_qr",
       legalCertDelivered: true,
     };
 
@@ -1077,7 +1154,7 @@ export default function App() {
       })
     );
 
-    // Update balances and multi-currency wallet slots
+    // Update balances and automatically wire 3% commission to Owner's QR Account
     setUsers((prev) =>
       prev.map((u) => {
         if (u.id === targetIdea.creator.id) {
@@ -1118,6 +1195,9 @@ export default function App() {
           return updatedCreator;
         }
         if (u.isSiteOwner) {
+          const qrDest = u.wallet?.ownerQrAccount
+            ? `${u.wallet.ownerQrAccount.qrProviderName} (${u.wallet.ownerQrAccount.qrAccountId})`
+            : "Owner QR Account";
           const updatedWallet = u.wallet ? {
             ...u.wallet,
             currencySlots: {
@@ -1128,15 +1208,15 @@ export default function App() {
             transactions: [
               {
                 id: `TX-COMM-${Date.now()}`,
-                type: "platform_discovery_fee" as const,
+                type: "owner_qr_auto_wire" as const,
                 amount: feeData.platformFeeUsd,
                 currency: "USD" as CurrencyCode,
-                counterparty: "IdeaVault Marketplace Discovery Escrow",
-                description: `3% Discovery Commission for "${targetIdea.title}"`,
+                counterparty: `Auto-Wired ➔ ${qrDest}`,
+                description: `3% Commission Auto-Wired to Owner QR for "${targetIdea.title}"`,
                 timestamp: "Just now",
                 status: "completed" as const,
-                referenceId: `COMM-${Date.now().toString().slice(-6)}`,
-                txHash: `0xCOMM${Math.random().toString(16).slice(2, 8).toUpperCase()}`,
+                referenceId: `QRWIRE-${Date.now().toString().slice(-6)}`,
+                txHash: `0xQRW${Math.random().toString(16).slice(2, 8).toUpperCase()}`,
               },
               ...u.wallet.transactions,
             ],
@@ -1159,7 +1239,7 @@ export default function App() {
 
     setToastMessage({
       type: "success",
-      text: `Deal executed! ${buyer.name} acquired "${targetIdea.title}". Net consideration credited to ideator wallet slot, and 3% fee (₨${feeData.platformFeeNpr.toLocaleString()} NPR) settled into Master Vault Wallet!`,
+      text: `Deal executed! ${buyer.name} acquired "${targetIdea.title}". Creator paid and 3% commission (₨${feeData.platformFeeNpr.toLocaleString()} NPR) automatically wired to Owner's QR Account.`,
     });
   };
 
@@ -1232,11 +1312,13 @@ export default function App() {
             amount: netSellerLocal,
             currency: creatorCurrency,
             counterparty: `${contract.buyerName} (${contract.buyerCompany || "Acquiring Partner"})`,
-            description: `Payment received for ${isFullBuyout ? "Full Buyout of" : "License Stake in"} "${contract.ideaTitle}"`,
+            description: `Verified payment received for ${isFullBuyout ? "Full Buyout of" : "License Stake in"} "${contract.ideaTitle}"`,
             timestamp: "Just now",
             status: "completed",
-            referenceId: contract.id,
-            txHash: `TX${Math.random().toString(16).slice(2, 10).toUpperCase()}`,
+            referenceId: contract.realBankOrQrRefId || contract.id,
+            txHash: `REF-${contract.realBankOrQrRefId || contract.id}`,
+            realBankOrQrRefId: contract.realBankOrQrRefId,
+            paymentProofFile: contract.paymentProofFile,
           };
           const updatedCreator: UserProfile = {
             ...u,
@@ -1266,22 +1348,27 @@ export default function App() {
             withdrawalMethods: [],
             transactions: [],
           };
+          const qrDest = ownerWallet.ownerQrAccount
+            ? `${ownerWallet.ownerQrAccount.qrProviderName} (${ownerWallet.ownerQrAccount.qrAccountId})`
+            : "Owner Nepali NPR ₨ QR Account";
           const updatedOwnerSlots = {
             ...ownerWallet.currencySlots,
-            USD: Math.round(((ownerWallet.currencySlots.USD || 0) + feeData.platformFeeUsd) * 100) / 100,
             NPR: Math.round(((ownerWallet.currencySlots.NPR || 0) + feeData.platformFeeNpr) * 100) / 100,
           };
           const ownerTx: WalletTransaction = {
             id: `TX-FEE-${Date.now()}`,
-            type: "platform_discovery_fee",
-            amount: feeData.platformFeeUsd,
-            currency: "USD",
-            counterparty: `${contract.buyerName} ➔ ${contract.creatorName}`,
-            description: `3% Discovery Fee for deal "${contract.ideaTitle}"`,
+            type: "owner_qr_auto_wire",
+            amount: feeData.platformFeeNpr,
+            currency: "NPR",
+            counterparty: `Auto-Wired in NPR ₨ ➔ ${qrDest}`,
+            description: `3% Commission Wired in Nepali Currency (₨${feeData.platformFeeNpr.toLocaleString()} NPR) for "${contract.ideaTitle}"`,
             timestamp: "Just now",
             status: "completed",
-            referenceId: contract.id,
-            txHash: `FEE${Math.random().toString(16).slice(2, 10).toUpperCase()}`,
+            referenceId: contract.realBankOrQrRefId || contract.id,
+            txHash: `NPRQR-${contract.realBankOrQrRefId || contract.id}`,
+            realBankOrQrRefId: contract.realBankOrQrRefId,
+            paymentProofFile: contract.paymentProofFile,
+            wiredOwnerNprAmount: feeData.platformFeeNpr,
           };
           const updatedOwner: UserProfile = {
             ...u,
@@ -1303,11 +1390,6 @@ export default function App() {
       })
     );
 
-    setToastMessage({
-      type: "success",
-      text: `Deal Completed! Real money of ${formatPrice(feeData.netSellerUsd, creatorCurrency)} transferred directly to creator's digital wallet account. 3% platform discovery fee credited to Master Vault.`,
-    });
-
     setContractIdea(null);
     if (targetIdea) {
       if (!isFullBuyout) {
@@ -1321,12 +1403,17 @@ export default function App() {
 
     setToastMessage({
       type: "success",
-      text: `Agreement executed! 3% platform discovery fee settled into Master Vault Wallet. Official legal deed delivered to ${contract.creatorName}.`,
+      text: `Verified real-money payment settled! Creator paid and 3% commission wired in Nepali Currency (₨${feeData.platformFeeNpr.toLocaleString()} NPR) to Owner's QR Account.`,
     });
   };
 
-  // Distribute 15% royalty + 3% platform fee on live commercial sales
-  const handleSimulateSale = (ideaId: string, saleAmount: number) => {
+  // Distribute receipt-verified 15% royalty + 3% Owner NPR QR wire on live commercial sales
+  const handleSimulateSale = (
+    ideaId: string,
+    saleAmount: number,
+    realBankOrQrRefId: string,
+    paymentProofFile: AccountUploadedFile
+  ) => {
     if (!isSitePublishedLive()) {
       setToastMessage({
         type: "info",
@@ -1334,24 +1421,27 @@ export default function App() {
       });
       return;
     }
-    const ideatorCommission = Math.round(saleAmount * 0.15); // exact 15% royalty
-    const platformCommission = Math.round(saleAmount * 0.03); // 3% platform creator commission
+    const ideatorCommission = Math.round(saleAmount * 0.15 * 100) / 100;
+    const platformCommissionUsd = Math.round(saleAmount * 0.03 * 100) / 100;
+    const platformCommissionNpr = Math.round(platformCommissionUsd * EXCHANGE_RATES.NPR.rate * 100) / 100;
 
     let targetCreatorId = "";
+    let targetIdeaTitle = "Licensed Product";
     setIdeas((prev) =>
       prev.map((idea) => {
         if (idea.id === ideaId) {
           targetCreatorId = idea.creator.id;
+          targetIdeaTitle = idea.title;
           const prevTotalSales = idea.marketSales?.totalProductSales || 0;
           const prevCommission = idea.marketSales?.commissionEarned || 0;
-          const prevPlatformCommission = idea.marketSales?.platformCommissionEarned || (prevTotalSales * 0.03);
+          const prevPlatformCommission = idea.marketSales?.platformCommissionEarned || prevTotalSales * 0.03;
           return {
             ...idea,
             status: "market_launched",
             marketSales: {
               totalProductSales: prevTotalSales + saleAmount,
               commissionEarned: prevCommission + ideatorCommission,
-              platformCommissionEarned: prevPlatformCommission + platformCommission,
+              platformCommissionEarned: prevPlatformCommission + platformCommissionUsd,
               quarterlyRevenue: (idea.marketSales?.quarterlyRevenue || 0) + saleAmount,
               unitsSold: (idea.marketSales?.unitsSold || 0) + Math.max(1, Math.round(saleAmount / 100)),
               launchDate: idea.marketSales?.launchDate || "Launched",
@@ -1359,7 +1449,7 @@ export default function App() {
             },
             productionNotes: [
               ...(idea.productionNotes || []),
-              `Customer market sale reported: +$${saleAmount.toLocaleString()} gross sales -> 15% Royalty (+${ideatorCommission.toLocaleString()} USD) auto-transferred to ${idea.creator.name}'s wallet, 3% Platform Commission (+${platformCommission.toLocaleString()} USD) credited to Master Vault Wallet.`,
+              `Receipt-verified commercial payment (Ref #${realBankOrQrRefId}, File: ${paymentProofFile.name}): $${saleAmount.toLocaleString()} gross revenue -> 15% Creator Royalty ($${ideatorCommission.toLocaleString()} USD) settled and 3% Owner Commission wired in Nepali Currency (₨${platformCommissionNpr.toLocaleString()} NPR) to Owner QR Account.`,
             ],
           };
         }
@@ -1367,34 +1457,37 @@ export default function App() {
       })
     );
 
-    // Credit 15% royalty to ideator and 3% commission to platform owner
     setUsers((prev) =>
       prev.map((u) => {
-        if (u.id === targetCreatorId || (u.name === "Sarah Jenkins, RN" && targetCreatorId === "user_creator")) {
+        if (u.id === targetCreatorId) {
           const userCurr = u.preferredCurrency || "USD";
           const payoutLocal = convertCurrencyToCurrency(ideatorCommission, "USD", userCurr);
-          const updatedWallet = u.wallet ? {
-            ...u.wallet,
-            currencySlots: {
-              ...u.wallet.currencySlots,
-              [userCurr]: Math.round(((u.wallet.currencySlots[userCurr] || 0) + payoutLocal) * 100) / 100,
-            },
-            transactions: [
-              {
-                id: `TX-ROY-${Date.now()}`,
-                type: "royalty_received" as const,
-                amount: payoutLocal,
-                currency: userCurr,
-                counterparty: "Customer Retail Market Settlement",
-                description: `15% Perpetual Sales Royalty for idea sales`,
-                timestamp: "Just now",
-                status: "completed" as const,
-                referenceId: `ROY-${Date.now().toString().slice(-6)}`,
-                txHash: `0xROY${Math.random().toString(16).slice(2, 8).toUpperCase()}`,
-              },
-              ...u.wallet.transactions,
-            ],
-          } : u.wallet;
+          const updatedWallet = u.wallet
+            ? {
+                ...u.wallet,
+                currencySlots: {
+                  ...u.wallet.currencySlots,
+                  [userCurr]: Math.round(((u.wallet.currencySlots[userCurr] || 0) + payoutLocal) * 100) / 100,
+                },
+                transactions: [
+                  {
+                    id: `TX-ROY-${Date.now()}`,
+                    type: "royalty_received" as const,
+                    amount: payoutLocal,
+                    currency: userCurr,
+                    counterparty: "Receipt-Verified Commercial Settlement",
+                    description: `15% Verified Sales Royalty for "${targetIdeaTitle}"`,
+                    timestamp: "Just now",
+                    status: "completed" as const,
+                    referenceId: realBankOrQrRefId,
+                    txHash: `ROY-${realBankOrQrRefId}`,
+                    realBankOrQrRefId,
+                    paymentProofFile,
+                  },
+                  ...u.wallet.transactions,
+                ],
+              }
+            : u.wallet;
 
           return {
             ...u,
@@ -1404,19 +1497,41 @@ export default function App() {
           };
         }
         if (u.isSiteOwner) {
-          const updatedWallet = u.wallet ? {
-            ...u.wallet,
-            currencySlots: {
-              ...u.wallet.currencySlots,
-              USD: Math.round(((u.wallet.currencySlots.USD || 0) + platformCommission) * 100) / 100,
-              NPR: Math.round(((u.wallet.currencySlots.NPR || 0) + platformCommission * 135.2) * 100) / 100,
-            },
-          } : u.wallet;
+          const qrDest = u.wallet?.ownerQrAccount
+            ? `${u.wallet.ownerQrAccount.qrProviderName} (${u.wallet.ownerQrAccount.qrAccountId})`
+            : "Owner Nepali NPR ₨ QR Account";
+          const updatedWallet = u.wallet
+            ? {
+                ...u.wallet,
+                currencySlots: {
+                  ...u.wallet.currencySlots,
+                  NPR: Math.round(((u.wallet.currencySlots.NPR || 0) + platformCommissionNpr) * 100) / 100,
+                },
+                transactions: [
+                  {
+                    id: `TX-ROY-OWNER-${Date.now()}`,
+                    type: "owner_qr_auto_wire" as const,
+                    amount: platformCommissionNpr,
+                    currency: "NPR" as CurrencyCode,
+                    counterparty: `Auto-Wired in NPR ₨ ➔ ${qrDest}`,
+                    description: `3% Royalty Commission Wired in Nepali Currency (₨${platformCommissionNpr.toLocaleString()} NPR) for "${targetIdeaTitle}"`,
+                    timestamp: "Just now",
+                    status: "completed" as const,
+                    referenceId: realBankOrQrRefId,
+                    txHash: `NPRQR-${realBankOrQrRefId}`,
+                    realBankOrQrRefId,
+                    paymentProofFile,
+                    wiredOwnerNprAmount: platformCommissionNpr,
+                  },
+                  ...u.wallet.transactions,
+                ],
+              }
+            : u.wallet;
 
           return {
             ...u,
-            balance: u.balance + platformCommission,
-            platformRevenueEarned: (u.platformRevenueEarned || 0) + platformCommission,
+            balance: u.balance + platformCommissionUsd,
+            platformRevenueEarned: (u.platformRevenueEarned || 0) + platformCommissionUsd,
             wallet: updatedWallet,
           };
         }
@@ -1424,7 +1539,6 @@ export default function App() {
       })
     );
 
-    // Keep active currentUser in sync if affected
     setCurrentUser((prev) => {
       if (prev.id === targetCreatorId) {
         return {
@@ -1436,8 +1550,8 @@ export default function App() {
       if (prev.isSiteOwner) {
         return {
           ...prev,
-          balance: prev.balance + platformCommission,
-          platformRevenueEarned: (prev.platformRevenueEarned || 0) + platformCommission,
+          balance: prev.balance + platformCommissionUsd,
+          platformRevenueEarned: (prev.platformRevenueEarned || 0) + platformCommissionUsd,
         };
       }
       return prev;
@@ -1587,68 +1701,94 @@ export default function App() {
 
   return (
     <div className="min-h-screen bg-neutral-950 text-neutral-100 flex flex-col font-sans selection:bg-amber-500/30 selection:text-amber-200">
-      {/* Top Navigation */}
-      <Navbar
-        currentUser={currentUser}
-        activeTab={activeTab}
-        setActiveTab={setActiveTab}
-        onOpenCreateIdea={() => {
-          if (!currentUser.passedHumanVerification) {
-            setIsHumanVerifyOpen(true);
-          } else if (!currentUser.agreedToUnAndNepalLaws) {
+      {isStandaloneWebsiteOpen ? (
+        <CompanyLandingWebsite
+          currentUser={currentUser}
+          ideas={ideas}
+          preferredCurrency={preferredCurrency}
+          onSelectCurrency={setPreferredCurrency}
+          onEnterMarketplace={() => enterMarketplaceApp("foryou")}
+          onOpenCreateIdea={() => {
+            if (!currentUser.passedHumanVerification) {
+              setIsHumanVerifyOpen(true);
+            } else if (!currentUser.agreedToUnAndNepalLaws) {
+              setIsCreateAccountOpen(true);
+            } else {
+              setIsCreateOpen(true);
+            }
+          }}
+          onOpenDigitalWallet={() => {
+            setWalletInitialTab("slots");
+            setIsDigitalWalletOpen(true);
+          }}
+          onOpenSiteCopyright={() => setIsSiteCopyrightOpen(true)}
+          onOpenLegalGuide={() => setIsLegalGuideOpen(true)}
+          onOpenSalesGraph={() => setIsSalesGraphOpen(true)}
+          onOpenUnCert={() => setIsUnCertOpen(true)}
+          onOpenEarningsDashboard={() => setIsEarningsDashboardOpen(true)}
+          onOpenCreateAccount={(type) => {
+            setCreateAccountInitialType(type);
             setIsCreateAccountOpen(true);
-          } else {
-            setIsCreateOpen(true);
-          }
-        }}
-        onOpenEthicalCert={() => setIsEthicalCertOpen(true)}
-        onOpenLegalGuide={() => setIsLegalGuideOpen(true)}
-        onOpenSalesGraph={() => {
-          setSalesGraphIdea(null);
-          setIsSalesGraphOpen(true);
-        }}
-        onOpenAdvancedOwnerControl={() => setIsAdvancedOwnerControlOpen(true)}
-        onOpenDigitalWallet={() => {
-          setWalletInitialTab("slots");
-          setIsDigitalWalletOpen(true);
-        }}
-        onOpenEarningsDashboard={() => setIsEarningsDashboardOpen(true)}
-        onOpenScannerPay={() => setIsQrScannerOpen(true)}
-        onOpenLawAndSafety={() => setIsLawAndSafetyOpen(true)}
-        onOpenUnCert={() => setIsUnCertOpen(true)}
-        onOpenWebsiteLink={() => setIsWebsiteLinkOpen(true)}
-        preferredCurrency={preferredCurrency}
-        onSelectCurrency={setPreferredCurrency}
-        flaggedCount={flaggedCount}
-      />
-
-      {/* Main Content Area - Clean, Uncrowded Layout */}
-      <main className="flex-1 max-w-7xl w-full mx-auto px-4 py-6 sm:px-6 space-y-5">
-
-        {/* TAB 0: OFFICIAL COMPANY LANDING WEBSITE */}
-        {activeTab === "website" && (
-          <CompanyLandingWebsite
+          }}
+          onOpenLegalDocs={() => setIsLegalDocsCenterOpen(true)}
+          onOpenPromoVideo={() => setIsPromoVideoOpen(true)}
+          onOpenSeoGuide={() => setIsSeoGuideOpen(true)}
+          onSelectIdea={(selected) => {
+            setContractIdea(selected);
+          }}
+        />
+      ) : (
+        <>
+          {/* Top Navigation */}
+          <Navbar
             currentUser={currentUser}
-            ideas={ideas}
-            preferredCurrency={preferredCurrency}
-            onSelectCurrency={setPreferredCurrency}
-            onEnterMarketplace={() => setActiveTab("foryou")}
-            onOpenCreateIdea={() => setIsCreateOpen(true)}
+            activeTab={activeTab}
+            setActiveTab={(tab) => {
+              if (tab === "website") {
+                openStandaloneWebsite();
+              } else {
+                setActiveTab(tab);
+              }
+            }}
+            onOpenStandaloneWebsite={openStandaloneWebsite}
+            onOpenCreateIdea={() => {
+              if (!currentUser.passedHumanVerification) {
+                setIsHumanVerifyOpen(true);
+              } else if (!currentUser.agreedToUnAndNepalLaws) {
+                setIsCreateAccountOpen(true);
+              } else {
+                setIsCreateOpen(true);
+              }
+            }}
+            onOpenEthicalCert={() => setIsEthicalCertOpen(true)}
+            onOpenLegalGuide={() => setIsLegalGuideOpen(true)}
+            onOpenSalesGraph={() => {
+              setSalesGraphIdea(null);
+              setIsSalesGraphOpen(true);
+            }}
+            onOpenAdvancedOwnerControl={() => setIsAdvancedOwnerControlOpen(true)}
             onOpenDigitalWallet={() => {
               setWalletInitialTab("slots");
               setIsDigitalWalletOpen(true);
             }}
-            onOpenSiteCopyright={() => setIsSiteCopyrightOpen(true)}
-            onOpenLegalGuide={() => setIsLegalGuideOpen(true)}
-            onOpenSalesGraph={() => setIsSalesGraphOpen(true)}
-            onOpenUnCert={() => setIsUnCertOpen(true)}
-            onOpenWebsiteLink={() => setIsWebsiteLinkOpen(true)}
             onOpenEarningsDashboard={() => setIsEarningsDashboardOpen(true)}
-            onSelectIdea={(selected) => {
-              setContractIdea(selected);
+            onOpenScannerPay={() => setIsQrScannerOpen(true)}
+            onOpenLawAndSafety={() => setIsLawAndSafetyOpen(true)}
+            onOpenUnCert={() => setIsUnCertOpen(true)}
+            onOpenCreateAccount={(type) => {
+              setCreateAccountInitialType(type);
+              setIsCreateAccountOpen(true);
             }}
+            onOpenLegalDocs={() => setIsLegalDocsCenterOpen(true)}
+            onOpenPromoVideo={() => setIsPromoVideoOpen(true)}
+            onOpenSeoGuide={() => setIsSeoGuideOpen(true)}
+            preferredCurrency={preferredCurrency}
+            onSelectCurrency={setPreferredCurrency}
+            flaggedCount={flaggedCount}
           />
-        )}
+
+          {/* Main Content Area - Clean, Uncrowded Layout */}
+          <main className="flex-1 max-w-7xl w-full mx-auto px-4 py-6 sm:px-6 space-y-5">
 
         {/* TAB 1: FOR YOU RECOMMENDATION FEED */}
         {activeTab === "foryou" && (
@@ -2076,7 +2216,9 @@ export default function App() {
             onOpenAdvancedControl={() => setIsAdvancedOwnerControlOpen(true)}
           />
         )}
-      </main>
+          </main>
+        </>
+      )}
 
       {/* ALL MODALS */}
       <CreateIdeaModal
@@ -2090,6 +2232,7 @@ export default function App() {
       <ContractModal
         idea={contractIdea}
         currentUser={currentUser}
+        ownerProfile={users.find((u) => u.isSiteOwner) || currentUser}
         isOpen={Boolean(contractIdea)}
         onClose={() => setContractIdea(null)}
         onSignContract={handleSignContract}
@@ -2098,6 +2241,7 @@ export default function App() {
       <ProductionRoomModal
         idea={productionIdea}
         currentUser={currentUser}
+        ownerProfile={users.find((u) => u.isSiteOwner) || currentUser}
         isOpen={Boolean(productionIdea)}
         onClose={() => setProductionIdea(null)}
         onSimulateSale={handleSimulateSale}
@@ -2147,14 +2291,21 @@ export default function App() {
         isOpen={Boolean(matchedBuyersIdea)}
         onClose={() => setMatchedBuyersIdea(null)}
         onExecuteDeal={handleExecuteBuyerDeal}
+        onOpenContractForBuyer={(ideaToBuy) => {
+          setMatchedBuyersIdea(null);
+          setContractIdea(ideaToBuy);
+        }}
         preferredCurrency={preferredCurrency}
       />
 
-      {/* Create Account & Legal Agreement Modal */}
+      {/* Create Account & Owner Uploads Modal (1. Investor, 2. Idea Poster, 3. Owner Account) */}
       <CreateAccountModal
         isOpen={isCreateAccountOpen}
         onClose={() => setIsCreateAccountOpen(false)}
         onAccountCreated={handleAccountCreated}
+        initialAccountType={createAccountInitialType}
+        currentOwner={users.find((u) => u.isSiteOwner) || currentUser}
+        onUpdateOwnerAccount={handleUpdateOwnerProfile}
       />
 
       {/* Human Verification "I'm a Human" Modal with Different Tests Per Person */}
@@ -2256,6 +2407,12 @@ export default function App() {
           setWalletInitialTab(tab || "withdraw");
           setIsDigitalWalletOpen(true);
         }}
+        onUpdateWallet={handleUpdateWallet}
+        onOpenOwnerAccountUploads={() => {
+          setIsEarningsDashboardOpen(false);
+          setCreateAccountInitialType("owner");
+          setIsCreateAccountOpen(true);
+        }}
       />
 
       {/* System Connection & Cloud Diagnostics Modal */}
@@ -2292,83 +2449,104 @@ export default function App() {
         preferredCurrency={preferredCurrency}
       />
 
-      {/* Official Website Live Link & Shareable Deployment Modal */}
-      <WebsiteLinkModal
-        isOpen={isWebsiteLinkOpen}
-        onClose={() => setIsWebsiteLinkOpen(false)}
-        onEnterWebsiteTab={() => setActiveTab("website")}
+      {/* Unified Legal Copyright Documents Vault (All 4 Official Deeds & Law Drafts) */}
+      <LegalDocumentsCenterModal
+        isOpen={isLegalDocsCenterOpen}
+        onClose={() => setIsLegalDocsCenterOpen(false)}
+        siteCopyright={siteCopyright}
+        ideas={ideas}
+        currentUser={currentUser}
       />
 
-      {/* Permanent Registered Copyright & Anti-Hack Shield Footer */}
-      <footer className="mt-12 border-t border-neutral-800 bg-neutral-950 py-8 px-4 sm:px-6">
-        <div className="max-w-7xl mx-auto flex flex-col md:flex-row items-center justify-between gap-4 text-xs text-neutral-400">
-          <div className="flex items-center gap-2 flex-wrap text-center md:text-left">
-            <span className="font-extrabold text-neutral-200">IdeaVault</span>
-            <span className="text-neutral-600">•</span>
-            <span>Sole Registered Copyright Proprietor: <strong className="text-amber-300 font-semibold">{currentUser.isSiteOwner ? currentUser.name : "Medha Koirala"}</strong></span>
-            <span className="text-neutral-600">•</span>
-            <span>United Nations International Law & Nepal Copyright Act 2059</span>
+      {/* Official IdeaVault Promotional Video Studio & .webm Exporter */}
+      <PromoVideoStudioModal
+        isOpen={isPromoVideoOpen}
+        onClose={() => setIsPromoVideoOpen(false)}
+      />
+
+      {/* Step-by-Step Search Engine Indexing Hub (Google, Bing, DuckDuckGo, Yahoo, Brave) */}
+      <SearchEngineGuideModal
+        isOpen={isSeoGuideOpen}
+        onClose={() => setIsSeoGuideOpen(false)}
+        onOpenPromoVideo={() => setIsPromoVideoOpen(true)}
+      />
+
+      {/* Clean Minimal Marketplace Footer (only when inside Marketplace App) */}
+      {!isStandaloneWebsiteOpen && (
+        <footer className="mt-12 border-t border-neutral-800/80 bg-neutral-950 py-8 px-4 sm:px-6">
+          <div className="max-w-7xl mx-auto flex flex-col sm:flex-row items-center justify-between gap-4 text-xs text-neutral-400">
+            <div className="flex items-center gap-2.5 flex-wrap text-center sm:text-left">
+              <IdeaVaultLogo size="xs" />
+              <span className="font-bold text-neutral-200">IdeaVault</span>
+              <span aria-hidden="true">·</span>
+              <span>Founded by {currentUser.isSiteOwner ? currentUser.name : "Medha Koirala"}</span>
+            </div>
+
+            <div className="flex items-center gap-5 flex-wrap justify-center">
+              <button
+                onClick={() => setActiveTab("foryou")}
+                className="text-neutral-400 hover:text-neutral-200 transition-colors cursor-pointer"
+              >
+                Marketplace
+              </button>
+              <button
+                onClick={() => setIsLegalDocsCenterOpen(true)}
+                className="text-neutral-400 hover:text-neutral-200 transition-colors cursor-pointer"
+              >
+                Copyright Legal Docs
+              </button>
+              <button
+                onClick={() => setIsPromoVideoOpen(true)}
+                className="text-neutral-400 hover:text-neutral-200 transition-colors cursor-pointer"
+              >
+                Promo Video
+              </button>
+              <button
+                onClick={() => setIsSeoGuideOpen(true)}
+                className="text-neutral-400 hover:text-neutral-200 transition-colors cursor-pointer"
+              >
+                Search Engine Guide
+              </button>
+              <button
+                onClick={() => setIsEarningsDashboardOpen(true)}
+                className="text-neutral-400 hover:text-neutral-200 transition-colors cursor-pointer"
+              >
+                Earnings Dashboard
+              </button>
+              <button
+                onClick={() => {
+                  setWalletInitialTab("withdraw");
+                  setIsDigitalWalletOpen(true);
+                }}
+                className="text-neutral-400 hover:text-neutral-200 transition-colors cursor-pointer"
+              >
+                Digital Wallet &amp; QR
+              </button>
+              <button
+                type="button"
+                onClick={openStandaloneWebsite}
+                className="text-amber-400 hover:text-amber-300 font-medium flex items-center gap-1.5 transition-colors cursor-pointer"
+                title="Open Official IdeaVault Website"
+              >
+                <Globe className="h-3.5 w-3.5" />
+                <span>Official Website</span>
+                <ExternalLink className="h-3 w-3 opacity-80" />
+              </button>
+            </div>
           </div>
 
-          <div className="flex items-center gap-4 flex-wrap justify-center">
+          <div className="max-w-7xl mx-auto mt-5 pt-5 border-t border-neutral-900 flex flex-col sm:flex-row items-center justify-between gap-2 text-xs text-neutral-400 text-center sm:text-left">
+            <span>For any queries and questions, contact us at:</span>
             <a
-              href={getWebsiteLaunchHref()}
-              target="_blank"
-              rel="noopener noreferrer"
-              onClick={() => setActiveTab("website")}
-              className="text-amber-400 hover:text-amber-300 font-bold flex items-center gap-1.5 transition-colors cursor-pointer"
-              title="Open IdeaVault Company Website in another tab"
+              href="mailto:medhakoirala.servicesgmail.com@gmail.com"
+              className="inline-flex items-center gap-1.5 font-semibold text-amber-400 hover:text-amber-300 transition-colors break-all"
             >
-              <Globe className="h-3.5 w-3.5" />
-              <span>Company Website</span>
-              <ExternalLink className="h-3 w-3" />
+              <Mail className="h-3.5 w-3.5 shrink-0" />
+              <span>medhakoirala.servicesgmail.com@gmail.com</span>
             </a>
-            <span className="text-neutral-600">•</span>
-            <button
-              onClick={() => setIsWebsiteLinkOpen(true)}
-              className="text-amber-400 hover:text-amber-300 font-bold flex items-center gap-1.5 transition-colors cursor-pointer"
-              title="View live website deployment link and phone QR code"
-            >
-              <ExternalLink className="h-3.5 w-3.5" />
-              <span>Website Link & QR</span>
-            </button>
-            <span className="text-neutral-600">•</span>
-            <button
-              onClick={() => setIsUnCertOpen(true)}
-              className="text-sky-400 hover:text-sky-300 font-bold flex items-center gap-1.5 transition-colors cursor-pointer"
-              title="View official United Nations & WIPO Statutory Certificate & ITU-T X.800 Anti-Hacking Encryption"
-            >
-              <ShieldCheck className="h-3.5 w-3.5" />
-              <span>🇺🇳 UN Legal & Anti-Hack Cert</span>
-            </button>
-            <span className="text-neutral-600">•</span>
-            <button
-              onClick={() => setIsConnectionStatusOpen(true)}
-              className={`flex items-center gap-1.5 font-semibold transition-colors ${
-                isServerOnline ? "text-emerald-400 hover:text-emerald-300" : "text-red-400 hover:text-red-300"
-              }`}
-              title="Click to view full System Connection diagnostics"
-            >
-              <span className={`h-2 w-2 rounded-full ${isServerOnline ? "bg-emerald-400 animate-pulse" : "bg-red-400"}`} />
-              <span>{isServerOnline ? "System Online & Connected" : "Connection Check"}</span>
-            </button>
-            <span className="text-neutral-600">•</span>
-            <span className="text-emerald-400 flex items-center gap-1 font-medium">
-              <ShieldCheck className="h-3.5 w-3.5" />
-              Anti-Hack Shield (ITU-T X.800 Protected)
-            </span>
-            <span className="text-neutral-600">•</span>
-            <button
-              onClick={handleForceLiveSync}
-              className="text-sky-400 hover:text-sky-300 flex items-center gap-1 font-medium transition-colors"
-              title="Click to verify live sync with published site"
-            >
-              <Radio className="h-3.5 w-3.5 animate-pulse" />
-              <span>Live Cloud Sync v{syncVersion}</span>
-            </button>
           </div>
-        </div>
-      </footer>
+        </footer>
+      )}
 
       {/* Floating Action Toast Notification */}
       {toastMessage && (

@@ -1,21 +1,14 @@
-import React, { useState } from "react";
+import React from "react";
 import { Idea, BuyerMatch, UserProfile, CurrencyCode } from "../types";
-import { 
-  Users, 
-  CheckCircle2, 
-  Sparkles, 
-  DollarSign, 
-  Building, 
-  Briefcase, 
-  ShieldCheck, 
-  Send, 
-  ExternalLink,
+import {
+  Users,
+  Building,
   Smartphone,
   X,
   FileCheck,
-  Scale
+  QrCode,
 } from "lucide-react";
-import { findMatchedBuyers, formatPrice, PLATFORM_OWNER_WALLET, EXCHANGE_RATES } from "../utils/legalAndCurrency";
+import { findMatchedBuyers, formatPrice, EXCHANGE_RATES } from "../utils/legalAndCurrency";
 import { isSitePublishedLive } from "../utils/syncEngine";
 
 interface MatchedBuyersModalProps {
@@ -24,21 +17,17 @@ interface MatchedBuyersModalProps {
   isOpen: boolean;
   onClose: () => void;
   onExecuteDeal: (idea: Idea, buyer: BuyerMatch, isFullBuyout: boolean) => void;
+  onOpenContractForBuyer?: (idea: Idea, buyer: BuyerMatch) => void;
   preferredCurrency?: CurrencyCode;
 }
 
 export const MatchedBuyersModal: React.FC<MatchedBuyersModalProps> = ({
   idea,
-  currentUser,
   isOpen,
   onClose,
-  onExecuteDeal,
+  onOpenContractForBuyer,
   preferredCurrency = "USD",
 }) => {
-  const [selectedBuyer, setSelectedBuyer] = useState<BuyerMatch | null>(null);
-  const [dealSuccessNotice, setDealSuccessNotice] = useState<string | null>(null);
-  const [isProcessing, setIsProcessing] = useState(false);
-
   if (!isOpen || !idea) return null;
 
   const isPublished = isSitePublishedLive();
@@ -53,23 +42,16 @@ export const MatchedBuyersModal: React.FC<MatchedBuyersModalProps> = ({
   const platformFeeUsd = Math.round(upfrontPriceUsd * 0.03 * 100) / 100;
   const platformFeeNpr = Math.round(platformFeeUsd * EXCHANGE_RATES.NPR.rate);
 
-  const handleAcquireClick = (buyer: BuyerMatch) => {
+  const handleOpenVerifiedPaymentPortal = (buyer: BuyerMatch) => {
     if (!isPublished) return;
-    setSelectedBuyer(buyer);
-    setIsProcessing(true);
-
-    setTimeout(() => {
-      onExecuteDeal(idea, buyer, isFullBuyout);
-      setIsProcessing(false);
-      setDealSuccessNotice(
-        `SUCCESS! ${buyer.name} (${buyer.company}) has executed the ${isFullBuyout ? "100% Full Copyright Buyout" : "15% Royalty License"} agreement. Net real-money funds deposited to ${idea.creator.name}'s digital wallet slot in ${preferredCurrency}. Automated 3% discovery fee ($${platformFeeUsd} USD / ₨${platformFeeNpr.toLocaleString()} NPR) settled into Master Wallet!`
-      );
-    }, 1200);
+    if (onOpenContractForBuyer) {
+      onOpenContractForBuyer(idea, buyer);
+    }
   };
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-black/85 backdrop-blur-md overflow-y-auto">
-      <div 
+      <div
         id="modal-matched-buyers"
         className="relative w-full max-w-4xl rounded-2xl border border-neutral-800 bg-neutral-900/95 shadow-2xl overflow-hidden my-6"
       >
@@ -82,14 +64,14 @@ export const MatchedBuyersModal: React.FC<MatchedBuyersModalProps> = ({
             <div>
               <div className="flex items-center gap-2">
                 <h2 className="text-lg font-bold text-neutral-100">
-                  Matched Buyers & Builders Ready to Acquire
+                  Matched Buyers &amp; Builders Ready to Acquire
                 </h2>
-                <span className="rounded-full bg-emerald-500/15 border border-emerald-500/30 px-2.5 py-0.5 text-[10px] font-bold text-emerald-400">
-                  {matches.length} Verified Matches Found
+                <span className="text-xs font-semibold text-emerald-400">
+                  · {matches.length} Matches
                 </span>
               </div>
               <p className="text-xs text-neutral-400">
-                Matched according to domain expertise, acquisition budget, and production tooling capability
+                All acquisitions require actual real-money payment proof &amp; wire 3% in Nepali Currency (₨{platformFeeNpr.toLocaleString()} NPR) to Owner QR
               </p>
             </div>
           </div>
@@ -116,7 +98,11 @@ export const MatchedBuyersModal: React.FC<MatchedBuyersModalProps> = ({
                 Acquisition Model
               </span>
               <span className="text-xs font-bold text-amber-400">
-                {isFullBuyout ? "100% Full Copyright Buyout (0% Ongoing Royalty)" : "15% Creator Royalty License"}
+                {isFullBuyout
+                  ? "100% Full Copyright Buyout (0% Ongoing Royalty)"
+                  : idea.saleModel === "licensed_fixed_term"
+                  ? "3-Year License (1.5-Year Max 15% Royalty)"
+                  : "Keep Copyright + 15% Creator Royalty"}
               </span>
             </div>
 
@@ -133,25 +119,7 @@ export const MatchedBuyersModal: React.FC<MatchedBuyersModalProps> = ({
 
         {/* Content Body */}
         <div className="p-6 space-y-4 max-h-[65vh] overflow-y-auto">
-          {dealSuccessNotice ? (
-            <div className="rounded-2xl border border-emerald-500/40 bg-emerald-950/20 p-6 text-center space-y-3 animate-in fade-in">
-              <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-2xl bg-emerald-500/20 text-emerald-400 border border-emerald-500/40">
-                <CheckCircle2 className="h-8 w-8" />
-              </div>
-              <h3 className="text-lg font-bold text-neutral-100">Deal Completed & Legally Executed!</h3>
-              <p className="text-xs text-neutral-300 max-w-xl mx-auto leading-relaxed">
-                {dealSuccessNotice}
-              </p>
-              <div className="pt-2">
-                <button
-                  onClick={onClose}
-                  className="rounded-xl bg-emerald-500 hover:bg-emerald-400 px-6 py-2.5 text-xs font-bold text-neutral-950"
-                >
-                  View Updated Status in Marketplace
-                </button>
-              </div>
-            </div>
-          ) : matches.length === 0 ? (
+          {matches.length === 0 ? (
             <div className="rounded-2xl border border-neutral-800 bg-neutral-950/90 p-8 text-center space-y-3">
               <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-2xl bg-amber-500/10 border border-amber-500/30 text-amber-400">
                 <Users className="h-6 w-6" />
@@ -160,14 +128,13 @@ export const MatchedBuyersModal: React.FC<MatchedBuyersModalProps> = ({
                 No Human Buyers or Human Payments Active Yet
               </h3>
               <p className="text-xs text-neutral-400 max-w-lg mx-auto leading-relaxed">
-                Because IdeaVault is currently in pre-launch mode and not published live yet, external human buyers, human accounts, and real-money human payments do not exist yet. Once published live, verified corporate buyers and builders can acquire ideas using real-world national currencies (NPR, USD, INR, EUR, GBP, AUD, CAD, JPY, PLN) settled to your Digital Wallet or Any Bank Account.
+                Because IdeaVault is currently in pre-launch mode and not published live yet, external human buyers, human accounts, and real-money human payments do not exist yet. Once published live, verified buyers must submit real bank/QR payment receipts to acquire ideas, and the 3% commission wires to the Owner QR Account in Nepali Currency (NPR ₨) every time.
               </p>
             </div>
           ) : (
             <div className="space-y-4">
               <div className="text-xs text-neutral-400 leading-relaxed">
-                These verified corporate buyers, manufacturers, and hardware labs have real-money capital in escrow to acquire your idea.
-                Upon clicking <strong>Execute Buyout Deal</strong>, legal copyright transfer documents under the WIPO Berne Convention & Nepal Copyright Act 2059 are generated, 3% is settled into the Platform Master Wallet, and net proceeds are delivered to the ideator's multi-currency wallet slot.
+                Deals never settle with simulated clicks. Clicking <strong>Proceed to Real-Money Payment &amp; Contract</strong> opens the payment verification portal where actual funds must be paid, receipt proof uploaded, and 3% (₨{platformFeeNpr.toLocaleString()} NPR) wired to Owner Medha Koirala&apos;s Nepali QR Account.
               </div>
 
               <div className="grid grid-cols-1 gap-4">
@@ -185,12 +152,8 @@ export const MatchedBuyersModal: React.FC<MatchedBuyersModalProps> = ({
                       <div className="space-y-1">
                         <div className="flex items-center gap-2 flex-wrap">
                           <h4 className="text-sm font-bold text-neutral-100">{buyer.name}</h4>
-                          <span className="text-xs text-neutral-400">{buyer.handle}</span>
-                          <span className="rounded-full bg-amber-500/15 border border-amber-500/30 px-2 py-0.5 text-[10px] font-bold text-amber-300">
-                            {buyer.matchScore}% Match
-                          </span>
-                          <span className="rounded-full bg-neutral-800 px-2 py-0.5 text-[10px] text-neutral-400">
-                            {buyer.country}
+                          <span className="text-xs text-neutral-400">
+                            · {buyer.handle} · {buyer.matchScore}% Match · {buyer.country}
                           </span>
                         </div>
 
@@ -202,35 +165,16 @@ export const MatchedBuyersModal: React.FC<MatchedBuyersModalProps> = ({
                         <p className="text-xs text-neutral-400 leading-relaxed max-w-xl">
                           {buyer.reason}
                         </p>
-
-                        <div className="flex items-center gap-2 pt-1 text-[11px] text-neutral-500">
-                          <span>Past successes:</span>
-                          {buyer.pastCreations.map((p, idx) => (
-                            <span key={idx} className="rounded bg-neutral-900 border border-neutral-800 px-2 py-0.5 text-neutral-300">
-                              {p}
-                            </span>
-                          ))}
-                        </div>
                       </div>
                     </div>
 
                     <div className="sm:text-right flex sm:flex-col items-center sm:items-end justify-between gap-2 shrink-0 pt-2 sm:pt-0 border-t sm:border-t-0 border-neutral-800">
-                      <div>
-                        <span className="text-[10px] uppercase text-neutral-500 font-semibold block">
-                          Verified Budget
-                        </span>
-                        <span className="text-sm font-extrabold text-emerald-400 font-mono">
-                          {formatPrice(buyer.budgetUsd, buyer.preferredCurrency)}
-                        </span>
-                      </div>
-
                       <button
-                        onClick={() => handleAcquireClick(buyer)}
-                        disabled={isProcessing}
-                        className="flex items-center gap-1.5 rounded-xl bg-amber-500 hover:bg-amber-400 px-4 py-2 text-xs font-bold text-neutral-950 transition-all shadow-md shadow-amber-500/20 active:scale-95 disabled:opacity-50"
+                        onClick={() => handleOpenVerifiedPaymentPortal(buyer)}
+                        className="flex items-center gap-1.5 rounded-xl bg-amber-500 hover:bg-amber-400 px-4 py-2.5 text-xs font-bold text-neutral-950 transition-all shadow-md shadow-amber-500/20 active:scale-95 cursor-pointer"
                       >
                         <FileCheck className="h-4 w-4" />
-                        <span>{isProcessing && selectedBuyer?.id === buyer.id ? "Securing..." : "Execute Buyout Deal"}</span>
+                        <span>Proceed to Real-Money Payment &amp; Contract</span>
                       </button>
                     </div>
                   </div>
@@ -243,8 +187,8 @@ export const MatchedBuyersModal: React.FC<MatchedBuyersModalProps> = ({
         {/* Footer */}
         <div className="flex items-center justify-between border-t border-neutral-800 bg-neutral-950 px-6 py-3 text-xs text-neutral-400">
           <div className="flex items-center gap-2">
-            <Smartphone className="h-4 w-4 text-emerald-400" />
-            <span>Automated 3% discovery fee settled into Master Vault Wallet (Medha Koirala)</span>
+            <QrCode className="h-4 w-4 text-amber-400" />
+            <span>3% commission wired in Nepali Currency (NPR ₨) to Owner QR Account (Medha Koirala)</span>
           </div>
           <button
             onClick={onClose}

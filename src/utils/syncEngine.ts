@@ -29,7 +29,7 @@ export async function checkServerHealth(): Promise<ServerHealthStatus> {
         hasGeminiKey: false,
         timestamp: new Date().toISOString(),
         antiHackShield: "OFFLINE",
-        serverUrl: window.location.origin,
+        serverUrl: getLiveWebsiteOrigin(),
         statusText: `HTTP ${res.status}: Connection failed`,
       };
     }
@@ -40,7 +40,7 @@ export async function checkServerHealth(): Promise<ServerHealthStatus> {
       hasGeminiKey: Boolean(json.hasGeminiKey),
       timestamp: json.timestamp || new Date().toISOString(),
       antiHackShield: json.antiHackShield || "ACTIVE",
-      serverUrl: window.location.origin,
+      serverUrl: getLiveWebsiteOrigin(),
       statusText: "Operational & Connected",
     };
   } catch (err: any) {
@@ -51,7 +51,7 @@ export async function checkServerHealth(): Promise<ServerHealthStatus> {
       hasGeminiKey: false,
       timestamp: new Date().toISOString(),
       antiHackShield: "OFFLINE",
-      serverUrl: window.location.origin,
+      serverUrl: getLiveWebsiteOrigin(),
       statusText: err?.message || "Network connection unreachable",
     };
   }
@@ -149,26 +149,35 @@ export async function verifyAntiHackIntegrity(sampleText: string): Promise<{
   }
 }
 
-/**
- * Resolves the clean launch href for the Website button:
- * - When accessed via a mapped custom domain (e.g. ideavault.ideaspitfall / ideavault.ideaspitfall.com),
- *   opens clean root "/" with no .run.app prefix or trailing path.
- * - When accessed on the Cloud Run (.run.app) preview host before custom DNS is mapped,
- *   opens "/ideavault.ideaspitfall" so the browser loads the live app instead of failing DNS lookup.
- */
+export function getLiveWebsiteOrigin(): string {
+  if (typeof window !== "undefined" && window.location.origin) {
+    return window.location.origin;
+  }
+  return "https://ais-pre-flnmny7mxnb4tjuiqwxrun-445171234704.asia-southeast1.run.app";
+}
+
 export function getWebsiteLaunchHref(): string {
-  if (typeof window === "undefined") return "/ideavault.ideaspitfall";
-  const host = window.location.hostname.toLowerCase();
-  const isPreviewOrLocal =
-    host.endsWith(".run.app") ||
-    host === "localhost" ||
-    host === "127.0.0.1";
-  return isPreviewOrLocal ? "/ideavault.ideaspitfall" : "/";
+  return "/website";
+}
+
+export function syncCleanBrowserUrlPath(cleanPath: string = "/", push: boolean = false): void {
+  if (typeof window === "undefined") return;
+  try {
+    if (window.location.pathname !== cleanPath || window.location.hash) {
+      if (push) {
+        window.history.pushState({ path: cleanPath }, "IdeaVault", cleanPath);
+      } else {
+        window.history.replaceState({ path: cleanPath }, "IdeaVault", cleanPath);
+      }
+    }
+  } catch {
+    // ignore history security constraints in sandboxed contexts
+  }
 }
 
 /**
- * Returns true ONLY when the application is running on a live published domain
- * (not localhost and not an unpublished ais-dev / ais-pre preview container).
+ * Returns true ONLY when the application is running on a live published custom domain
+ * (not localhost and not a temporary .run.app preview container).
  * Ensures zero pre-launch human accounts, human payments, or synthetic earnings exist before publication.
  */
 export function isSitePublishedLive(): boolean {
@@ -177,8 +186,7 @@ export function isSitePublishedLive(): boolean {
   if (
     host === "localhost" ||
     host === "127.0.0.1" ||
-    host.startsWith("ais-dev-") ||
-    host.startsWith("ais-pre-")
+    host.endsWith(".run.app")
   ) {
     return false;
   }

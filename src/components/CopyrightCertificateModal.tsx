@@ -60,9 +60,69 @@ export const CopyrightCertificateModal: React.FC<CopyrightCertificateModalProps>
       `or license production rights under a 15% royalty covenant, subject to a 3% platform discovery fee automatically settled into in-app Master Vault Wallet (${PLATFORM_OWNER_WALLET.accountName}).`,
   };
 
+  const [downloadedDeed, setDownloadedDeed] = useState(false);
+
   const handleSendEmailCopy = () => {
     setEmailSent(true);
     setTimeout(() => setEmailSent(false), 4000);
+  };
+
+  const handleDownloadCertificateDeed = () => {
+    const deedText = [
+      "================================================================================",
+      "OFFICIAL CERTIFICATE OF COPYRIGHT SUBSISTENCE & DIGITAL TIMESTAMP RECORD",
+      "================================================================================",
+      `Certificate Registry ID : ${filing.certificateId}`,
+      `Timestamped At          : ${filing.registeredAt}`,
+      `Cryptographic Proof     : ${filing.cryptographicHash}`,
+      `Registered Concept      : ${idea.title}`,
+      `Category                : ${idea.category}`,
+      `Originating Author      : ${filing.authorName} (${filing.authorCountry})`,
+      `Registered Email        : ${filing.authorEmail}`,
+      `Commercial Terms        : ${
+        idea.saleModel === "full_buyout"
+          ? "Option 2 — 100% Full Copyright Buyout (0% Ongoing Royalty)"
+          : idea.saleModel === "licensed_fixed_term"
+          ? "Option 3 — 3-Year Licensed Product (Strict 1.5-Year / 18-Month Max 15% Royalty)"
+          : "Option 1 — Keep Copyright + 15% Ongoing Royalty"
+      }`,
+      `Listed Upfront Price    : $${idea.upfrontPrice} USD`,
+      "",
+      "STATUTORY LEGAL STATEMENT:",
+      filing.legalPreamble,
+      "",
+      "GOVERNING LAWS & INTERNATIONAL TREATIES:",
+      ...filing.governingLaws.map((law, idx) => `  ${idx + 1}. ${law}`),
+      "",
+      "EVIDENTIARY NOTICE:",
+      "Under Article 5(2) of the WIPO Berne Convention (181 Contracting States) and Section 3",
+      "of the Nepal Copyright Act, 2059 (2002), copyright protection subsists automatically",
+      "upon creation without formal prior registration. Pursuant to Sections 13 & 14 of the",
+      "Nepal Electronic Transactions Act, 2063 (2006) and UNCITRAL Electronic Commerce Rules,",
+      "this SHA-256 timestamped digital record serves as admissible electronic evidence of",
+      "authorship and priority date.",
+      "",
+      "Platform Inquiries: medhakoirala.servicesgmail.com@gmail.com",
+      "================================================================================",
+    ].join("\n");
+
+    const safeSlug = idea.title
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, "-")
+      .replace(/^-|-$/g, "")
+      .slice(0, 40);
+    const blob = new Blob([deedText], { type: "text/plain;charset=utf-8" });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = `IdeaVault-Copyright-Deed-${safeSlug || filing.certificateId}.txt`;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+
+    setDownloadedDeed(true);
+    setTimeout(() => setDownloadedDeed(false), 3500);
   };
 
   return (
@@ -158,7 +218,9 @@ export const CopyrightCertificateModal: React.FC<CopyrightCertificateModalProps>
                 <span className="text-xs font-bold text-amber-400 block">
                   {idea.saleModel === "full_buyout"
                     ? "100% Full Copyright Buyout (0% Ongoing Royalty to Ideator)"
-                    : "15% Creator Royalty Production License"}
+                    : idea.saleModel === "licensed_fixed_term"
+                    ? "3-Year Licensed Product (Strict 1.5-Year Max 15% Royalty)"
+                    : "Keep Copyright + 15% Creator Royalty License"}
                 </span>
                 <span className="text-[11px] text-neutral-400 block">
                   Upfront Consideration: ${idea.upfrontPrice} USD
@@ -170,10 +232,10 @@ export const CopyrightCertificateModal: React.FC<CopyrightCertificateModalProps>
                   Platform Discovery Fee Remittance
                 </span>
                 <span className="text-xs font-bold text-emerald-400 block">
-                  3% Settled into Master Digital Wallet (Medha Koirala)
+                  3% Settled to Owner NPR ₨ QR Account (Medha Koirala)
                 </span>
                 <span className="text-[11px] text-neutral-400 block">
-                  Settlement Conduit: IdeaVault Multi-Currency In-App Vault Wallet
+                  Settled strictly upon verified real-money transactions
                 </span>
               </div>
             </div>
@@ -195,9 +257,9 @@ export const CopyrightCertificateModal: React.FC<CopyrightCertificateModalProps>
             <div className="mt-4 rounded-xl bg-neutral-950/60 p-4 border border-neutral-800 text-[11px] text-neutral-300 leading-relaxed space-y-2 relative z-10">
               <div className="font-bold text-neutral-200">Enforceable Statutory Precedents:</div>
               <ul className="list-disc list-inside space-y-1 text-neutral-400 text-[10px]">
-                <li><strong>Nepal Copyright Act 2059 (Sec. 3 & 19):</strong> Guarantees automatic subsistence of copyright upon idea publication and confirms full legal authority to transfer economic rights with 0% future royalty.</li>
-                <li><strong>WIPO Berne Convention (Articles 2 & 5):</strong> Extends mutual copyright recognition across all 181 UN member signatory states.</li>
-                <li><strong>Nepal Electronic Transactions Act 2063:</strong> Digital hashes and electronic records serve as primary admissible legal evidence.</li>
+                <li><strong>Nepal Copyright Act 2059 (Sec. 3 &amp; 19):</strong> Guarantees automatic subsistence of copyright upon creation and confirms full legal authority to license or transfer economic rights.</li>
+                <li><strong>WIPO Berne Convention (Articles 2 &amp; 5(2)):</strong> Extends automatic copyright recognition across all 181 contracting countries without mandatory formal registration.</li>
+                <li><strong>Nepal Electronic Transactions Act 2063:</strong> Digital hashes and electronic records serve as admissible legal evidence of priority date and authorship.</li>
               </ul>
             </div>
 
@@ -208,16 +270,16 @@ export const CopyrightCertificateModal: React.FC<CopyrightCertificateModalProps>
                   WIPO/NP
                 </div>
                 <div>
-                  <div className="font-bold text-neutral-200">Electronic Seal Verified</div>
-                  <div className="text-[10px] text-neutral-500">Universal Digital IP Registry</div>
+                  <div className="font-bold text-neutral-200">Electronic Timestamp Seal</div>
+                  <div className="text-[10px] text-neutral-500">Digital IP Priority Record</div>
                 </div>
               </div>
 
               <div className="text-right">
                 <div className="font-mono text-emerald-400 font-bold text-xs flex items-center justify-end gap-1">
-                  <CheckCircle2 className="h-3.5 w-3.5" /> LEGAL PAPERS DELIVERED
+                  <CheckCircle2 className="h-3.5 w-3.5" /> LEGAL RECORD READY
                 </div>
-                <div className="text-[10px] text-neutral-400">Dispatched to {filing.authorEmail}</div>
+                <div className="text-[10px] text-neutral-400">Registered to {filing.authorEmail}</div>
               </div>
             </div>
           </div>
@@ -227,28 +289,34 @@ export const CopyrightCertificateModal: React.FC<CopyrightCertificateModalProps>
         <div className="flex flex-wrap items-center justify-between border-t border-neutral-800 bg-neutral-950 px-6 py-3.5 gap-3">
           <button
             onClick={handleSendEmailCopy}
-            className="flex items-center gap-1.5 rounded-xl border border-neutral-700 bg-neutral-900 hover:bg-neutral-800 px-4 py-2 text-xs font-semibold text-neutral-200 transition-colors"
+            className="flex items-center gap-1.5 rounded-xl border border-neutral-700 bg-neutral-900 hover:bg-neutral-800 px-4 py-2 text-xs font-semibold text-neutral-200 transition-colors cursor-pointer"
           >
             <Mail className="h-3.5 w-3.5 text-amber-400" />
-            <span>{emailSent ? "Official Copy Emailed!" : "Email Me Official Legal Papers"}</span>
+            <span>{emailSent ? "Copy Prepared for Email!" : "Prepare Email Copy"}</span>
           </button>
 
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 flex-wrap">
             <button
-              onClick={() => {
-                alert(`Official Certificate ${filing.certificateId} downloaded as PDF proof.`);
-              }}
-              className="flex items-center gap-1.5 rounded-xl border border-neutral-700 bg-neutral-900 hover:bg-neutral-800 px-4 py-2 text-xs font-semibold text-neutral-200 transition-colors"
+              onClick={() => window.print()}
+              className="flex items-center gap-1.5 rounded-xl border border-neutral-700 bg-neutral-900 hover:bg-neutral-800 px-3.5 py-2 text-xs font-semibold text-neutral-200 transition-colors cursor-pointer"
+            >
+              <FileText className="h-3.5 w-3.5 text-amber-400" />
+              <span>Print / Save as PDF</span>
+            </button>
+
+            <button
+              onClick={handleDownloadCertificateDeed}
+              className="flex items-center gap-1.5 rounded-xl border border-emerald-500/40 bg-emerald-950/40 hover:bg-emerald-900/50 px-4 py-2 text-xs font-semibold text-emerald-300 transition-colors cursor-pointer"
             >
               <Download className="h-3.5 w-3.5 text-emerald-400" />
-              <span>Download PDF Deed</span>
+              <span>{downloadedDeed ? "Deed Downloaded!" : "Download Legal Deed (.txt)"}</span>
             </button>
 
             <button
               onClick={onClose}
-              className="rounded-xl bg-amber-500 hover:bg-amber-400 px-5 py-2 text-xs font-bold text-neutral-950 transition-all"
+              className="rounded-xl bg-amber-500 hover:bg-amber-400 px-5 py-2 text-xs font-bold text-neutral-950 transition-all cursor-pointer"
             >
-              Close Certificate
+              Close
             </button>
           </div>
         </div>

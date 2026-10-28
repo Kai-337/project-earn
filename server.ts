@@ -13,11 +13,6 @@ function getGeminiClient(): GoogleGenAI | null {
   if (!aiClient && process.env.GEMINI_API_KEY) {
     aiClient = new GoogleGenAI({
       apiKey: process.env.GEMINI_API_KEY,
-      httpOptions: {
-        headers: {
-          "User-Agent": "aistudio-build",
-        },
-      },
     });
   }
   return aiClient;
@@ -84,20 +79,18 @@ async function startServer() {
   const app = express();
   const PORT = 3000;
 
-  // Anti-Hack & Security Shield Middlewares (Configured for AI Studio iFrame & Cloud Run)
+  // Security Headers Middleware
   app.use((_req, res, next) => {
     res.setHeader("X-Content-Type-Options", "nosniff");
-    // Ensure framing is permitted inside AI Studio preview iframe
     res.removeHeader("X-Frame-Options");
     res.setHeader("X-XSS-Protection", "1; mode=block");
-    res.setHeader("X-Defense-Shield", "Zero-Trust-Active-MK977");
     res.setHeader("Access-Control-Allow-Origin", "*");
     res.setHeader("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS");
     res.setHeader("Access-Control-Allow-Headers", "Content-Type, Authorization");
     next();
   });
 
-  // High-Performance Compression & Acceleration Middleware (reduces load latency by up to 75%)
+  // High-Performance Compression Middleware
   app.use(compression({
     level: 6,
     threshold: 1024,
@@ -107,37 +100,17 @@ async function startServer() {
     },
   }));
 
-  app.use(express.json({ limit: "15mb" }));
+  app.use(express.json({ limit: "25mb" }));
 
-  // Custom Branded Domain Configuration matching App Name
-  const CUSTOM_APP_DOMAINS = {
-    appName: "IdeaVault",
-    primaryCustomUrl: "https://ideavault.ideaspitfall",
-    customDomain: "ideavault.ideaspitfall",
-    brandSlug: "ideavault",
-    alternativeUrls: [
-      "https://ideavault.app",
-      "https://ideavault.io",
-      "https://ideavault.market",
-      "https://ideavault.network"
-    ],
-    sharedAppUrl: "https://ais-pre-flnmny7mxnb4tjuiqwxrun-445171234704.asia-southeast1.run.app",
-    devAppUrl: "https://ais-dev-flnmny7mxnb4tjuiqwxrun-445171234704.asia-southeast1.run.app",
-    dnsConfig: {
-      domain: "ideavault.ideaspitfall",
-      cnameHost: "www",
-      cnameTarget: "ghs.googlehosted.com.",
-      apexRecordA: "216.239.32.21", // Standard Google Cloud Run Domain Mapping
-      sslType: "Automated Let's Encrypt / Google Managed SSL",
-      status: "Configured & Active",
-    },
-  };
-
-  // API: Get App Custom Domain Info
-  app.get("/api/domain-config", (_req, res) => {
+  // API: Get Live Origin Info
+  app.get("/api/domain-config", (req, res) => {
+    const proto = (req.headers["x-forwarded-proto"] as string) || req.protocol || "https";
+    const host = (req.headers["x-forwarded-host"] as string) || req.get("host") || "localhost:3000";
+    const liveOrigin = `${proto.split(",")[0].trim()}://${host.split(",")[0].trim()}`;
     res.json({
       success: true,
-      ...CUSTOM_APP_DOMAINS,
+      appName: "IdeaVault",
+      liveOrigin,
     });
   });
 
@@ -164,6 +137,59 @@ async function startServer() {
       timestamp: new Date().toISOString(),
       antiHackShield: "ACTIVE",
     });
+  });
+
+  // SEO: Dynamic robots.txt for Google, Bing, DuckDuckGo, Yahoo & Brave Crawlers
+  app.get("/robots.txt", (req, res) => {
+    const proto = (req.headers["x-forwarded-proto"] as string) || req.protocol || "https";
+    const host = req.get("host") || "localhost:3000";
+    const baseUrl = process.env.APP_URL || `${proto}://${host}`;
+    res.type("text/plain").send(
+      [
+        "User-agent: *",
+        "Allow: /",
+        "Allow: /website",
+        "Disallow: /api/",
+        "",
+        "User-agent: Googlebot",
+        "Allow: /",
+        "",
+        "User-agent: Bingbot",
+        "Allow: /",
+        "",
+        "User-agent: DuckDuckBot",
+        "Allow: /",
+        "",
+        "User-agent: Slurp",
+        "Allow: /",
+        "",
+        `Sitemap: ${baseUrl}/sitemap.xml`,
+        "",
+      ].join("\n")
+    );
+  });
+
+  // SEO: Dynamic XML Sitemap for Google Search Console & Bing Webmaster Tools
+  app.get("/sitemap.xml", (req, res) => {
+    const proto = (req.headers["x-forwarded-proto"] as string) || req.protocol || "https";
+    const host = req.get("host") || "localhost:3000";
+    const baseUrl = process.env.APP_URL || `${proto}://${host}`;
+    const today = new Date().toISOString().split("T")[0];
+    res.type("application/xml").send(`<?xml version="1.0" encoding="UTF-8"?>
+<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
+  <url>
+    <loc>${baseUrl}/</loc>
+    <lastmod>${today}</lastmod>
+    <changefreq>daily</changefreq>
+    <priority>1.0</priority>
+  </url>
+  <url>
+    <loc>${baseUrl}/website</loc>
+    <lastmod>${today}</lastmod>
+    <changefreq>daily</changefreq>
+    <priority>0.9</priority>
+  </url>
+</urlset>`);
   });
 
   // API: Get Live Published Platform State (Sync Engine)
@@ -678,12 +704,11 @@ Return strictly valid JSON:
     }
   });
 
-  // Serve the SPA cleanly on the custom website URL path (/ideavault.ideaspitfall)
-  // while preserving /ideavault.ideaspitfall in the browser address bar
+  // Serve the SPA cleanly on /website
   app.use((req, _res, next) => {
     if (
       req.method === "GET" &&
-      (req.path === "/ideavault.ideaspitfall" || req.path.startsWith("/ideavault.ideaspitfall/"))
+      (req.path === "/website" || req.path === "/website/")
     ) {
       req.url = "/";
       req.originalUrl = "/";

@@ -16,14 +16,17 @@ import {
   Smartphone,
   Camera,
   CheckCircle2,
-  Globe
+  Globe,
+  Download
 } from "lucide-react";
 import { 
   findMatchedBuyers, 
   formatPrice, 
   EXCHANGE_RATES, 
   PLATFORM_OWNER_WALLET, 
-  calculateCommissionBreakdown 
+  calculateCommissionBreakdown,
+  generateFixedTermRoyaltyLawDraft,
+  downloadLawDraftDocument
 } from "../utils/legalAndCurrency";
 
 interface CreateIdeaModalProps {
@@ -50,7 +53,10 @@ export const CreateIdeaModal: React.FC<CreateIdeaModalProps> = ({
   const [description, setDescription] = useState("");
   const [details, setDetails] = useState("");
   const [upfrontPrice, setUpfrontPrice] = useState<number>(350);
-  const [saleModel, setSaleModel] = useState<SaleModelType>("full_buyout");
+  const [saleModel, setSaleModel] = useState<SaleModelType>(
+    currentUser.preferredDealModel || "keep_copyright"
+  );
+  const [showLawDraft, setShowLawDraft] = useState(false);
   const [preferredCurrency, setPreferredCurrency] = useState<CurrencyCode>(
     currentUser.preferredCurrency || initialCurrency || "NPR"
   );
@@ -78,6 +84,11 @@ export const CreateIdeaModal: React.FC<CreateIdeaModalProps> = ({
   if (!isOpen) return null;
 
   const commissionData = calculateCommissionBreakdown(Number(upfrontPrice) || 350, saleModel);
+  const fixedTermLawDraftText = generateFixedTermRoyaltyLawDraft({
+    creatorName: currentUser.name,
+    creatorCountry: currentUser.country || "Nepal",
+    ideaTitle: title.trim() || "[Untitled Idea Concept]",
+  });
 
   // Authenticity & Raw English / AI-Slop Detector
   const evaluateAuthenticity = (t: string, p: string, d: string) => {
@@ -210,7 +221,13 @@ export const CreateIdeaModal: React.FC<CreateIdeaModalProps> = ({
       saleModel,
       ownershipStatus: "registered_to_author",
       documentsDelivered: true,
-      legalPreamble: `Official Certificate of Copyright Registration issued under Nepal Copyright Act 2059 (Sec 3) & WIPO Berne Convention. All economic and moral rights registered to ${currentUser.name}. Model set to ${saleModel === "keep_copyright" ? "100% Retained Creator Copyright (Showcase & Co-Founder Discovery)" : saleModel === "full_buyout" ? "100% Full Copyright Buyout (0% Ongoing Royalty)" : "15% Royalty License"}. 3% platform discovery fee settled into Master Vault Wallet (${PLATFORM_OWNER_WALLET.accountName}).`,
+      legalPreamble: `Official Certificate of Copyright Registration issued under Nepal Copyright Act 2059 (Sec 3) & WIPO Berne Convention. All economic and moral rights registered to ${currentUser.name}. Monetization structure set to ${
+        saleModel === "keep_copyright"
+          ? "Option 1: Keep Copyrights + 15% Ongoing Royalty"
+          : saleModel === "full_buyout"
+          ? "Option 2: Sell Copyrights (0% Ongoing Royalty)"
+          : "Option 3: 3-Year Licensed Product (15% Royalty) with Official Law Draft Stating Strict 1.5-Year Maximum Royalty Cap"
+      }. 3% platform discovery fee settled only upon completed real-money transactions (${PLATFORM_OWNER_WALLET.accountName}).`,
     };
 
     // Find instant matches for builders and buyers
@@ -240,10 +257,10 @@ export const CreateIdeaModal: React.FC<CreateIdeaModalProps> = ({
         country: currentUser.country || "Nepal",
         preferredCurrency,
       },
-      upfrontPrice: saleModel === "keep_copyright" ? 0 : Number(upfrontPrice) || 350,
+      upfrontPrice: Number(upfrontPrice) || 350,
       buyoutPrice: saleModel === "full_buyout" ? Number(upfrontPrice) || 350 : undefined,
       saleModel,
-      royaltyCommissionPercent: saleModel === "royalty_split" ? 15 : 0,
+      royaltyCommissionPercent: saleModel === "full_buyout" ? 0 : 15,
       platformCommissionPercent: 3, // 3% Platform Creator Discovery Commission settled into Master Wallet
       createdAt: "Just now",
       likes: 1,
@@ -445,20 +462,20 @@ export const CreateIdeaModal: React.FC<CreateIdeaModalProps> = ({
             </span>
           </div>
 
-          {/* SALE MODEL SELECTION: 100% Full Copyright Buyout (0% Royalty) vs. 15% Royalty */}
+          {/* MONETIZATION STRUCTURE SELECTION (3 OPTIONS) */}
           <div className="rounded-2xl border border-amber-500/40 bg-gradient-to-br from-amber-500/10 via-neutral-950 to-neutral-950 p-5 space-y-3">
             <div className="flex items-center gap-2">
               <Scale className="h-5 w-5 text-amber-400" />
               <h3 className="text-sm font-bold text-neutral-100">
-                Choose Commercial Sale Model & Copyright Assignment
+                Choose Monetization Structure (3 Copyright & Royalty Options)
               </h3>
             </div>
             <p className="text-xs text-neutral-400">
-              Under Section 19 of the Nepal Copyright Act 2059 and WIPO Berne Convention, you choose whether to completely sell all copyrights or license for royalties:
+              Under Section 19 of the Nepal Copyright Act 2059 and WIPO Berne Convention, choose 1 of the 3 official monetization structures:
             </p>
 
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 pt-1">
-              {/* Option A: Keep 100% Copyright */}
+              {/* Option 1: Keep Copyrights + 15% Royalty */}
               <div
                 onClick={() => setSaleModel("keep_copyright")}
                 className={`rounded-xl border p-3.5 cursor-pointer transition-all ${
@@ -469,18 +486,18 @@ export const CreateIdeaModal: React.FC<CreateIdeaModalProps> = ({
               >
                 <div className="flex items-center justify-between mb-1.5">
                   <span className="text-xs font-bold text-neutral-100">
-                    Keep 100% Copyright
+                    1. Keep Copyright + 15%
                   </span>
-                  <span className="rounded-full bg-emerald-500/20 text-emerald-400 text-[10px] font-bold px-2 py-0.5">
-                    100% Yours
+                  <span className="text-emerald-400 text-[10px] font-bold">
+                    15% Royalty
                   </span>
                 </div>
                 <p className="text-[11px] text-neutral-300 leading-relaxed">
-                  Retain complete ownership. Showcase your idea publicly to attract tech builders and co-founders without selling any rights.
+                  You post an idea, keep 100% of your copyrights, and earn a 15% ongoing royalty when licensed for production.
                 </p>
               </div>
 
-              {/* Option B: Full Buyout */}
+              {/* Option 2: Sell Copyrights -> 0% Royalty */}
               <div
                 onClick={() => setSaleModel("full_buyout")}
                 className={`rounded-xl border p-3.5 cursor-pointer transition-all ${
@@ -491,56 +508,101 @@ export const CreateIdeaModal: React.FC<CreateIdeaModalProps> = ({
               >
                 <div className="flex items-center justify-between mb-1.5">
                   <span className="text-xs font-bold text-neutral-100">
-                    Full Copyright Buyout
+                    2. Sell Copyrights
                   </span>
-                  <span className="rounded-full bg-amber-500/20 text-amber-400 text-[10px] font-bold px-2 py-0.5">
+                  <span className="text-amber-400 text-[10px] font-bold">
                     0% Royalty
                   </span>
                 </div>
                 <p className="text-[11px] text-neutral-300 leading-relaxed">
-                  Fully sell all copyrights for a clean lump-sum buyout fee into escrow. No future ongoing royalties owed.
+                  You sell 100% of your copyrights for an upfront cash buyout, leading to no ongoing royalty (0% royalty).
                 </p>
               </div>
 
-              {/* Option C: 15% Royalty Split */}
+              {/* Option 3: 3-Year Licensed Product + 1.5-Year Capped Royalty Law Draft */}
               <div
-                onClick={() => setSaleModel("royalty_split")}
+                onClick={() => setSaleModel("licensed_fixed_term")}
                 className={`rounded-xl border p-3.5 cursor-pointer transition-all ${
-                  saleModel === "royalty_split"
+                  saleModel === "licensed_fixed_term"
                     ? "border-sky-500 bg-sky-500/15 shadow-md"
                     : "border-neutral-800 bg-neutral-900/60 hover:border-neutral-700"
                 }`}
               >
                 <div className="flex items-center justify-between mb-1.5">
                   <span className="text-xs font-bold text-neutral-100">
-                    15% Creator Royalty
+                    3. 3-Yr Licensed Product
                   </span>
-                  <span className="rounded-full bg-sky-500/20 text-sky-400 text-[10px] font-bold px-2 py-0.5">
-                    15% Perpetual
+                  <span className="text-sky-400 text-[10px] font-bold">
+                    1.5-Yr Cap Draft
                   </span>
                 </div>
                 <p className="text-[11px] text-neutral-300 leading-relaxed">
-                  Retain moral authorship while licensing production. Receive an upfront stake plus 15% of all product sales forever.
+                  15% royalty on a 3-year licensed product with Official Law Draft Document stating strictly 1.5 years of royalty and no more.
                 </p>
               </div>
             </div>
+
+            {/* Option 3 Law Draft Document Panel */}
+            {saleModel === "licensed_fixed_term" && (
+              <div className="mt-2 rounded-xl border border-sky-500/40 bg-neutral-950 p-3.5 space-y-2.5">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <div className="text-xs font-bold text-sky-300 flex items-center gap-1.5">
+                    <FileText className="h-4 w-4 text-sky-400" />
+                    <span>Law Draft Document: 1.5-Year Maximum Royalty Cap (And No More Than That)</span>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={() => setShowLawDraft((prev) => !prev)}
+                      className="rounded-lg border border-neutral-700 bg-neutral-800 hover:bg-neutral-700 px-2.5 py-1 text-[11px] font-semibold text-neutral-200 cursor-pointer"
+                    >
+                      {showLawDraft ? "Hide Law Draft" : "Preview Law Draft"}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() =>
+                        downloadLawDraftDocument(
+                          `Law-Draft-1.5Yr-Royalty-Cap-${(title || "Idea").replace(/[^a-zA-Z0-9]/g, "-").slice(0, 24)}.txt`,
+                          fixedTermLawDraftText
+                        )
+                      }
+                      className="flex items-center gap-1 rounded-lg bg-sky-500 hover:bg-sky-400 px-2.5 py-1 text-[11px] font-bold text-neutral-950 cursor-pointer"
+                    >
+                      <Download className="h-3.5 w-3.5" />
+                      <span>Download Law Draft (.txt)</span>
+                    </button>
+                  </div>
+                </div>
+                <p className="text-[11px] text-neutral-400 leading-relaxed">
+                  Attaches an enforceable statutory covenant granting a 3-year licensed product commercialization window while strictly capping the 15% creator royalty at <strong>1.5 years (18 months) and no more than 1.5 years</strong> (0% after Month 18).
+                </p>
+                {showLawDraft && (
+                  <pre className="rounded-lg border border-neutral-800 bg-neutral-900 p-3 text-[11px] font-mono text-neutral-300 whitespace-pre-wrap max-h-48 overflow-y-auto leading-relaxed">
+                    {fixedTermLawDraftText}
+                  </pre>
+                )}
+              </div>
+            )}
           </div>
 
-          {/* Pricing & Automatic 3% Master Wallet Settlement Notice */}
-          {saleModel !== "keep_copyright" && (
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              <div>
-                <label className="block text-xs font-semibold text-neutral-300 mb-1">
-                  {saleModel === "full_buyout" ? "Full Copyright Buyout Price ($USD)" : "Upfront Reservation Stake ($USD)"} *
-                </label>
-                <div className="relative">
-                  <DollarSign className="absolute left-3 top-2.5 h-3.5 w-3.5 text-neutral-500" />
-                  <input
-                    type="number"
-                    min={50}
-                    max={25000}
-                    step={25}
-                    value={upfrontPrice}
+          {/* Pricing & Automatic 3% Commission Notice */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <div>
+              <label className="block text-xs font-semibold text-neutral-300 mb-1">
+                {saleModel === "full_buyout"
+                  ? "Full Copyright Buyout Price ($USD) *"
+                  : saleModel === "licensed_fixed_term"
+                  ? "3-Year Product License Activation Stake ($USD) *"
+                  : "Upfront Licensing / Reservation Stake ($USD) *"}
+              </label>
+              <div className="relative">
+                <DollarSign className="absolute left-3 top-2.5 h-3.5 w-3.5 text-neutral-500" />
+                <input
+                  type="number"
+                  min={50}
+                  max={25000}
+                  step={25}
+                  value={upfrontPrice}
                   onChange={(e) => setUpfrontPrice(Number(e.target.value))}
                   className="w-full rounded-xl border border-neutral-800 bg-neutral-950 pl-8 pr-3 py-2 text-xs font-mono text-neutral-100 focus:border-amber-500 focus:outline-none"
                 />
@@ -562,11 +624,10 @@ export const CreateIdeaModal: React.FC<CreateIdeaModalProps> = ({
                 </span>
               </div>
               <p className="text-[11px] text-neutral-400 leading-relaxed">
-                Settled into Platform Owner Master Vault Wallet upon deal completion. Net proceeds to your in-app wallet slot: <strong className="text-emerald-400">${commissionData.netSellerUsd} USD</strong>.
+                Charged strictly upon completed real-money deal execution. Net proceeds to your chosen Digital Wallet or Bank Account: <strong className="text-emerald-400">${commissionData.netSellerUsd} USD</strong>.
               </p>
             </div>
           </div>
-          )}
 
           {/* Category & Tags */}
           <div className="rounded-xl border border-neutral-800 bg-neutral-950/80 p-4 space-y-3">

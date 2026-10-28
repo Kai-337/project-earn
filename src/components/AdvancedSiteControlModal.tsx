@@ -1,5 +1,5 @@
 import React, { useState } from "react";
-import { UserProfile, Idea, SiteCopyrightRegistration, AntiHackDefenseStatus } from "../types";
+import { UserProfile, Idea, SiteCopyrightRegistration, AntiHackDefenseStatus, AccountUploadedFile } from "../types";
 import { 
   ShieldCheck, 
   X, 
@@ -20,7 +20,9 @@ import {
   Activity,
   Globe,
   Radio,
-  FileCheck
+  FileCheck,
+  QrCode,
+  FileText
 } from "lucide-react";
 import { pushLiveSyncUpdate, verifyAntiHackIntegrity } from "../utils/syncEngine";
 
@@ -65,6 +67,10 @@ export const AdvancedSiteControlModal: React.FC<AdvancedSiteControlModalProps> =
   const [professionInput, setProfessionInput] = useState(currentUser.profession || "Platform Founder & Sole Copyright Owner");
   const [vaultIdInput, setVaultIdInput] = useState(currentUser.wallet?.vaultAccountId || currentUser.wallet?.walletId || "VAULT-MK-977-MASTER-001");
   const [avatarInput, setAvatarInput] = useState(currentUser.avatar);
+  const [ownerFiles, setOwnerFiles] = useState<AccountUploadedFile[]>(currentUser.uploadedFiles || []);
+  const [ownerQrDataUrl, setOwnerQrDataUrl] = useState<string>(currentUser.wallet?.ownerQrAccount?.qrImageDataUrl || "");
+  const [ownerQrProvider, setOwnerQrProvider] = useState<string>(currentUser.wallet?.ownerQrAccount?.qrProviderName || "");
+  const [ownerQrAccountId, setOwnerQrAccountId] = useState<string>(currentUser.wallet?.ownerQrAccount?.qrAccountId || "");
   const [isSavedNotice, setIsSavedNotice] = useState(false);
 
   // Anti-Hack Simulator State
@@ -74,6 +80,52 @@ export const AdvancedSiteControlModal: React.FC<AdvancedSiteControlModalProps> =
 
   if (!isOpen) return null;
 
+  const handleUploadAvatarFile = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = () => {
+      if (typeof reader.result === "string") setAvatarInput(reader.result);
+    };
+    reader.readAsDataURL(file);
+  };
+
+  const handleUploadOwnerQrFile = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = () => {
+      if (typeof reader.result === "string") setOwnerQrDataUrl(reader.result);
+    };
+    reader.readAsDataURL(file);
+  };
+
+  const handleUploadOwnerDocs = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = Array.from(e.target.files || []);
+    files.forEach((file) => {
+      const reader = new FileReader();
+      reader.onload = () => {
+        if (typeof reader.result === "string") {
+          const fileDataUrl = reader.result;
+          setOwnerFiles((prev) => [
+            ...prev,
+            {
+              id: `own-doc-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+              name: file.name,
+              mimeType: file.type || "application/octet-stream",
+              sizeBytes: file.size,
+              kind: file.type.startsWith("image/") ? "image" : "document",
+              dataUrl: fileDataUrl,
+              uploadedAt: new Date().toLocaleDateString(),
+            },
+          ]);
+        }
+      };
+      reader.readAsDataURL(file);
+    });
+    e.target.value = "";
+  };
+
   const handleSaveProfile = () => {
     const updated: UserProfile = {
       ...currentUser,
@@ -81,9 +133,23 @@ export const AdvancedSiteControlModal: React.FC<AdvancedSiteControlModalProps> =
       headline: headlineInput.trim(),
       profession: professionInput.trim(),
       avatar: avatarInput,
+      uploadedFiles: ownerFiles,
+      receiveQrImageDataUrl: ownerQrDataUrl || undefined,
       wallet: {
         ...currentUser.wallet,
         vaultAccountId: vaultIdInput.trim(),
+        ownerQrAccount:
+          ownerQrDataUrl || ownerQrProvider.trim() || ownerQrAccountId.trim()
+            ? {
+                accountHolderName: nameInput.trim() || "Medha Koirala",
+                qrProviderName: ownerQrProvider.trim() || "Personal Nepali QR Account",
+                qrAccountId: ownerQrAccountId.trim() || "Direct NPR QR",
+                qrImageDataUrl: ownerQrDataUrl || undefined,
+                currency: "NPR",
+                autoWireEnabled: true,
+                updatedAt: new Date().toLocaleDateString(),
+              }
+            : currentUser.wallet.ownerQrAccount,
       },
       // Immutable owner status guarantees
       isSiteOwner: true,
@@ -324,20 +390,101 @@ export const AdvancedSiteControlModal: React.FC<AdvancedSiteControlModalProps> =
 
               <div>
                 <label className="text-xs font-semibold text-neutral-300">
-                  Professional Photo Source URL / Preset
+                  Owner Profile Photo (Upload Image File)
                 </label>
-                <div className="mt-1 flex items-center gap-2">
-                  <input
-                    type="text"
-                    value={avatarInput}
-                    onChange={(e) => setAvatarInput(e.target.value)}
-                    placeholder="URL to photo"
-                    className="w-full rounded-xl border border-neutral-700 bg-neutral-900 px-3.5 py-2.5 text-xs text-neutral-300 focus:border-sky-500 focus:outline-none"
-                  />
+                <div className="mt-1 flex items-center gap-3">
                   <img
                     src={avatarInput}
                     alt="Preview"
-                    className="h-10 w-10 rounded-xl object-cover ring-1 ring-amber-400 shrink-0"
+                    className="h-11 w-11 rounded-xl object-cover ring-1 ring-amber-400 shrink-0"
+                  />
+                  <label className="cursor-pointer inline-flex items-center gap-1.5 rounded-xl bg-neutral-800 hover:bg-neutral-700 px-3.5 py-2 text-xs font-semibold text-neutral-100">
+                    <Upload className="h-3.5 w-3.5 text-amber-400" />
+                    <span>Upload Photo</span>
+                    <input type="file" accept="image/*" onChange={handleUploadAvatarFile} className="hidden" />
+                  </label>
+                </div>
+              </div>
+            </div>
+
+            {/* Owner Document / Image Uploads */}
+            <div className="rounded-2xl border border-neutral-800 bg-neutral-900/50 p-4 space-y-3">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <div>
+                  <h4 className="text-xs font-bold text-neutral-100">Owner Account Documents &amp; Images</h4>
+                  <p className="text-[11px] text-neutral-400">Attach PDFs, ID documents, certificates, or images to your Owner account.</p>
+                </div>
+                <label className="cursor-pointer inline-flex items-center gap-1.5 rounded-xl bg-amber-500 hover:bg-amber-400 px-3.5 py-2 text-xs font-bold text-neutral-950">
+                  <Upload className="h-3.5 w-3.5" />
+                  <span>+ Upload Document or Image</span>
+                  <input type="file" multiple accept="image/*,.pdf,.doc,.docx,.txt" onChange={handleUploadOwnerDocs} className="hidden" />
+                </label>
+              </div>
+              {ownerFiles.length > 0 && (
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 pt-2">
+                  {ownerFiles.map((f) => (
+                    <div key={f.id} className="flex items-center justify-between gap-2 rounded-xl border border-neutral-800 bg-neutral-950 px-3 py-2 text-xs">
+                      <div className="flex items-center gap-2 min-w-0">
+                        <FileText className="h-4 w-4 text-sky-400 shrink-0" />
+                        <span className="truncate text-neutral-200">{f.name}</span>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => setOwnerFiles((prev) => prev.filter((x) => x.id !== f.id))}
+                        className="text-neutral-400 hover:text-red-400 p-1"
+                      >
+                        <Trash2 className="h-3.5 w-3.5" />
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            {/* Owner Nepali Currency (NPR) QR Code Upload */}
+            <div className="rounded-2xl border border-amber-500/40 bg-neutral-900/60 p-4 space-y-3">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <div>
+                  <h4 className="text-xs font-bold text-amber-300 flex items-center gap-1.5">
+                    <QrCode className="h-4 w-4 text-amber-400" />
+                    <span>My Nepali Currency (NPR ₨) Payment QR Upload</span>
+                  </h4>
+                  <p className="text-[11px] text-neutral-400">
+                    Every real-money 3% commission and owner sale wires directly to this QR account in Nepalese Rupees (NPR ₨).
+                  </p>
+                </div>
+                <label className="cursor-pointer inline-flex items-center gap-1.5 rounded-xl bg-amber-500 hover:bg-amber-400 px-3.5 py-2 text-xs font-bold text-neutral-950">
+                  <Upload className="h-3.5 w-3.5" />
+                  <span>{ownerQrDataUrl ? "Replace NPR QR Image" : "Upload NPR QR Image"}</span>
+                  <input type="file" accept="image/*" onChange={handleUploadOwnerQrFile} className="hidden" />
+                </label>
+              </div>
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 items-center">
+                <div className="h-24 w-24 rounded-xl bg-white p-1.5 flex items-center justify-center overflow-hidden">
+                  {ownerQrDataUrl ? (
+                    <img src={ownerQrDataUrl} alt="Owner NPR QR" className="h-full w-full object-contain" />
+                  ) : (
+                    <QrCode className="h-12 w-12 text-neutral-900" />
+                  )}
+                </div>
+                <div>
+                  <label className="block text-[11px] font-semibold text-neutral-300 mb-1">QR App / Bank Name</label>
+                  <input
+                    type="text"
+                    value={ownerQrProvider}
+                    onChange={(e) => setOwnerQrProvider(e.target.value)}
+                    placeholder="e.g. eSewa, Khalti, Fonepay, Bank QR"
+                    className="w-full rounded-xl border border-neutral-700 bg-neutral-950 px-3 py-2 text-xs text-neutral-100"
+                  />
+                </div>
+                <div>
+                  <label className="block text-[11px] font-semibold text-neutral-300 mb-1">QR Phone / Account ID (NPR)</label>
+                  <input
+                    type="text"
+                    value={ownerQrAccountId}
+                    onChange={(e) => setOwnerQrAccountId(e.target.value)}
+                    placeholder="+977 98XXXXXXXX"
+                    className="w-full rounded-xl border border-neutral-700 bg-neutral-950 px-3 py-2 text-xs font-mono text-neutral-100"
                   />
                 </div>
               </div>
@@ -349,7 +496,7 @@ export const AdvancedSiteControlModal: React.FC<AdvancedSiteControlModalProps> =
                 className="flex items-center gap-2 rounded-xl bg-gradient-to-r from-sky-500 to-sky-600 px-6 py-2.5 text-xs font-bold text-neutral-950 shadow-md shadow-sky-500/20 hover:from-sky-400 hover:to-sky-500 transition-all"
               >
                 <Save className="h-4 w-4" />
-                <span>Save Changes & Keep Permanent Owner Tag</span>
+                <span>Save Owner Uploads, NPR QR &amp; Profile</span>
               </button>
             </div>
           </div>

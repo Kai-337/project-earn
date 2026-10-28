@@ -17,7 +17,7 @@ export type TaskType =
 
 export type CurrencyCode = "USD" | "NPR" | "INR" | "EUR" | "GBP" | "AUD" | "CAD" | "JPY" | "PLN";
 
-export type SaleModelType = "keep_copyright" | "full_buyout" | "royalty_split";
+export type SaleModelType = "keep_copyright" | "full_buyout" | "licensed_fixed_term" | "royalty_split";
 
 export interface CopyrightFiling {
   certificateId: string;
@@ -88,6 +88,16 @@ export interface Task {
   deliverables?: string;
 }
 
+export interface AccountUploadedFile {
+  id: string;
+  name: string;
+  mimeType: string;
+  sizeBytes: number;
+  kind: "image" | "document";
+  dataUrl: string;
+  uploadedAt: string;
+}
+
 // Payout Accounts: Real-World Bank Account or Real-World Digital Wallet Only
 export interface WithdrawalMethod {
   id: string;
@@ -100,6 +110,8 @@ export interface WithdrawalMethod {
   isDefault: boolean;
   verifiedAt: string;
   notes?: string;
+  qrImageDataUrl?: string;
+  uploadedFiles?: AccountUploadedFile[];
 }
 
 // In-App Digital Wallet: Chronological Transaction Ledger
@@ -113,7 +125,8 @@ export interface WalletTransaction {
     | "withdrawal"
     | "direct_transfer"
     | "currency_exchange"
-    | "platform_discovery_fee";
+    | "platform_discovery_fee"
+    | "owner_qr_auto_wire";
   amount: number;
   currency: CurrencyCode;
   counterparty: string;
@@ -124,6 +137,19 @@ export interface WalletTransaction {
   referenceId: string;
   txHash: string;
   qrPayload?: string;
+  realBankOrQrRefId?: string;
+  paymentProofFile?: AccountUploadedFile;
+  wiredOwnerNprAmount?: number;
+}
+
+export interface OwnerQrAccountConfig {
+  accountHolderName: string;
+  qrProviderName: string; // Chosen by owner (no pre-selected bank)
+  qrAccountId: string; // Phone, Merchant ID, or QR Account identifier
+  qrImageDataUrl?: string; // Uploaded real QR image for automatic NPR wiring
+  currency: CurrencyCode; // Always NPR (Nepalese Rupee) for Owner automatic wire
+  autoWireEnabled: boolean;
+  updatedAt: string;
 }
 
 // In-App Digital Wallet: Secured Multi-Currency Slots & Controls
@@ -136,6 +162,7 @@ export interface UserDigitalWallet {
   // Multi-Currency Slots: dedicated slot for storing different currencies
   currencySlots: Record<CurrencyCode, number>;
   withdrawalMethods: WithdrawalMethod[];
+  ownerQrAccount?: OwnerQrAccountConfig;
   transactions: WalletTransaction[];
   totalDepositedUsd?: number;
   totalWithdrawnUsd?: number;
@@ -177,8 +204,11 @@ export interface Contract {
   ownerWalletAmountNpr: number;
   ownerWalletAmountUsd: number;
   ownerWalletTxnId: string;
-  ownerWalletStatus: "settled_in_app_wallet" | "transferred";
+  ownerWalletStatus: "settled_in_app_wallet" | "transferred" | "auto_wired_to_owner_qr";
   legalCertDelivered?: boolean;
+  realBankOrQrRefId?: string;
+  paymentProofFile?: AccountUploadedFile;
+  wiredOwnerNprAmount?: number;
   // Backward compatibility fields
   ownerEsewaPhone?: string;
   ownerEsewaAmountNpr?: number;
@@ -268,14 +298,20 @@ export interface Idea {
   };
 }
 
+export type AccountCreationType = "investor" | "idea_poster" | "owner";
+
 export interface UserProfile {
   id: string;
   name: string;
   handle: string;
   avatar: string;
   role: "creator_ideator" | "builder_buyer" | "site_owner";
+  accountType?: "investor" | "idea_poster" | "owner";
   headline: string;
   profession?: string;
+  investorCompany?: string;
+  customInvestmentSectors?: string[];
+  preferredDealModel?: "keep_copyright" | "full_buyout" | "licensed_fixed_term";
   backgroundField?: string;
   isNonTech?: boolean;
   isRealHuman: boolean; // No AI posing as real people
@@ -291,6 +327,9 @@ export interface UserProfile {
   ownerCustomTitle?: string;
   // In-App Digital Wallet
   wallet: UserDigitalWallet;
+  // Uploaded Account Images, Supporting Documents & Receive Payment QR
+  uploadedFiles?: AccountUploadedFile[];
+  receiveQrImageDataUrl?: string;
   // Account verification, country, preferred currency, and legal status
   email?: string;
   country?: string;

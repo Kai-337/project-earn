@@ -72,6 +72,7 @@ export const IdeaCard: React.FC<IdeaCardProps> = ({
   const isMarketLaunched = idea.status === "market_launched";
   const isInProduction = idea.status === "in_production" || idea.status === "under_contract";
   const isFullBuyout = idea.saleModel === "full_buyout";
+  const isFixedTermLicensed = idea.saleModel === "licensed_fixed_term";
   const matchedBuyersCount = idea.matchedBuyers?.length || 3;
 
   return (
@@ -151,10 +152,16 @@ export const IdeaCard: React.FC<IdeaCardProps> = ({
           className={`rounded-full px-2.5 py-0.5 text-[10px] font-bold border ${
             isFullBuyout
               ? "bg-purple-500/15 border-purple-500/30 text-purple-300"
+              : isFixedTermLicensed
+              ? "bg-sky-500/15 border-sky-500/30 text-sky-300"
               : "bg-amber-500/15 border-amber-500/30 text-amber-300"
           }`}
         >
-          {isFullBuyout ? "100% Full Copyright Buyout (0% Roy)" : "15% Creator Royalty"}
+          {isFullBuyout
+            ? "Sell Copyrights (0% Royalty)"
+            : isFixedTermLicensed
+            ? "3-Yr License • 1.5-Yr Max 15% Royalty Draft"
+            : "Keep Copyright + 15% Royalty"}
         </span>
       </div>
 
@@ -313,15 +320,23 @@ export const IdeaCard: React.FC<IdeaCardProps> = ({
             </div>
             <div>
               <div className="text-xs font-bold text-neutral-100 flex items-center gap-2 flex-wrap">
-                <span>{isFullBuyout ? "100% Full Copyright Buyout" : "15% Creator Royalty License"}</span>
+                <span>
+                  {isFullBuyout
+                    ? "Sell Copyrights — 0% Royalty"
+                    : isFixedTermLicensed
+                    ? "3-Year Licensed Product (1.5-Yr Max 15% Royalty Law Draft)"
+                    : "Keep Copyrights + 15% Royalty"}
+                </span>
                 <span className="text-[10px] font-normal text-emerald-400 bg-emerald-950/60 px-1.5 py-0.5 rounded border border-emerald-500/30 flex items-center gap-1">
-                  <span>3% In-App Master Wallet</span>
+                  <span>3% Discovery Fee on Sale</span>
                 </span>
               </div>
               <div className="text-[11px] text-neutral-400">
-                {isFullBuyout 
-                  ? "Buyer owns all copyrights • 0% ongoing royalty or commission to ideator" 
-                  : "Ideator retains 15% lifetime product sales cut on all market revenues"}
+                {isFullBuyout
+                  ? "Buyer owns 100% copyrights • 0% ongoing royalty to ideator"
+                  : isFixedTermLicensed
+                  ? "3-year product license • Official Law Draft caps 15% royalty strictly at 1.5 years (0% after Month 18)"
+                  : "Ideator keeps 100% copyrights and earns 15% royalty on commercialized product sales"}
               </div>
             </div>
           </div>

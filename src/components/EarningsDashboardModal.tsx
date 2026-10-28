@@ -13,7 +13,10 @@ import {
   FileText,
   TrendingUp,
   Smartphone,
-  Globe
+  Globe,
+  QrCode,
+  Upload,
+  CheckCircle2
 } from "lucide-react";
 import { EXCHANGE_RATES, formatPrice, formatLocalCurrency, convertUsdToCurrency } from "../utils/legalAndCurrency";
 import { isSitePublishedLive } from "../utils/syncEngine";
@@ -27,6 +30,8 @@ interface EarningsDashboardModalProps {
   wallet: UserDigitalWallet;
   preferredCurrency: CurrencyCode;
   onOpenWallet: (initialTab?: "slots" | "scanner" | "withdraw" | "ledger") => void;
+  onUpdateWallet?: (updatedWallet: UserDigitalWallet) => void;
+  onOpenOwnerAccountUploads?: () => void;
 }
 
 interface MemberEarningRow {
@@ -77,10 +82,44 @@ export const EarningsDashboardModal: React.FC<EarningsDashboardModalProps> = ({
   wallet,
   preferredCurrency,
   onOpenWallet,
+  onUpdateWallet,
+  onOpenOwnerAccountUploads,
 }) => {
   const [activeView, setActiveView] = useState<"overview" | "owner" | "everyone" | "ledger">("overview");
   const [searchQuery, setSearchQuery] = useState("");
   const [hoveredPointIdx, setHoveredPointIdx] = useState<number | null>(null);
+  const [inlineQrSavedNotice, setInlineQrSavedNotice] = useState<string | null>(null);
+
+  const handleQuickUploadOwnerNprQr = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file || !onUpdateWallet) return;
+    const reader = new FileReader();
+    reader.onload = () => {
+      if (typeof reader.result === "string") {
+        onUpdateWallet({
+          ...wallet,
+          ownerQrAccount: {
+            accountHolderName: wallet.ownerQrAccount?.accountHolderName || currentUser.name,
+            qrProviderName: wallet.ownerQrAccount?.qrProviderName || "Owner Nepali Currency QR Account",
+            qrAccountId: wallet.ownerQrAccount?.qrAccountId || "Direct Nepali NPR QR",
+            qrImageDataUrl: reader.result,
+            currency: "NPR",
+            autoWireEnabled: true,
+            updatedAt: new Date().toLocaleDateString("en-US", {
+              year: "numeric",
+              month: "short",
+              day: "numeric",
+            }),
+          },
+        });
+        setInlineQrSavedNotice(
+          "Owner Nepali Currency (NPR ₨) QR uploaded and active! Every 3% commission wires to this QR in Nepalese Rupees."
+        );
+        setTimeout(() => setInlineQrSavedNotice(null), 5000);
+      }
+    };
+    reader.readAsDataURL(file);
+  };
 
   const isPublished = isSitePublishedLive();
   const currencyMeta = EXCHANGE_RATES[preferredCurrency] || EXCHANGE_RATES.USD;
@@ -109,13 +148,14 @@ export const EarningsDashboardModal: React.FC<EarningsDashboardModalProps> = ({
         isLocked: false,
         currencySlots: { NPR: 0, USD: 0, EUR: 0, INR: 0, GBP: 0, AUD: 0, CAD: 0, JPY: 0, PLN: 0 },
         withdrawalMethods: cleanMethods,
+        ownerQrAccount: baseWallet?.ownerQrAccount,
         transactions: [],
       };
     }
 
     return (
       baseWallet
-        ? { ...baseWallet, withdrawalMethods: cleanMethods }
+        ? { ...baseWallet, withdrawalMethods: cleanMethods, ownerQrAccount: baseWallet.ownerQrAccount }
         : {
             walletId: "VAULT-MK-977-MASTER-001",
             vaultAccountId: "VAULT-MK-977-MASTER-001",
@@ -297,17 +337,17 @@ export const EarningsDashboardModal: React.FC<EarningsDashboardModalProps> = ({
 
         entries.push({
           id: `led-con-owner-${idea.contract.id}`,
-          recipientName: `${ownerProfile.name} (Owner Master Vault)`,
+          recipientName: `${ownerProfile.name} (Owner Nepali NPR ₨ QR)`,
           isOwner: true,
-          category: "3% Platform Discovery Fee",
+          category: "3% Owner QR Wire (NPR ₨)",
           description: idea.title,
-          counterparty: `${idea.contract.buyerName} → ${idea.contract.creatorName}`,
-          amountDisplay: formatPrice(ownerFeeUsd, preferredCurrency),
+          counterparty: `${idea.contract.buyerName} → Wired in Nepali Currency`,
+          amountDisplay: `₨${(idea.contract.ownerWalletAmountNpr || Math.round(ownerFeeUsd * EXCHANGE_RATES.NPR.rate)).toLocaleString()} NPR`,
           amountUsd: ownerFeeUsd,
           ownerFeeUsd: ownerFeeUsd,
           creatorAndTaskUsd: 0,
           timestamp: idea.contract.createdAt || "Settled",
-          reference: idea.contract.ownerWalletTxnId || idea.contract.id,
+          reference: idea.contract.realBankOrQrRefId || idea.contract.ownerWalletTxnId || idea.contract.id,
         });
       }
 
@@ -930,43 +970,86 @@ export const EarningsDashboardModal: React.FC<EarningsDashboardModalProps> = ({
             </div>
           </section>
 
-          {/* OWNER MASTER VAULT & PAYOUT OPTIONS (Zero Auto-Added Banks) */}
+           {/* OWNER QR ACCOUNT & AUTOMATIC REAL-MONEY WIRE IN NEPALI CURRENCY (NPR ₨) */}
           {(activeView === "overview" || activeView === "owner") && (
             <section className="rounded-2xl border border-neutral-800 bg-neutral-900/40 p-5 space-y-5">
               <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-4 border-b border-neutral-800">
-                <div>
-                  <h3 className="text-base font-bold text-neutral-100 flex items-center gap-2">
-                    <Crown className="h-4 w-4 text-amber-400 shrink-0" />
-                    <span>Owner Master Vault — {ownerRow.name}</span>
-                  </h3>
-                  <p className="text-xs text-neutral-400 mt-0.5">
-                    3% real-money commission on every published sale · Vault ID {ownerWallet.vaultAccountId || ownerWallet.walletId}
-                  </p>
+                <div className="flex items-center gap-3.5">
+                  {ownerWallet.ownerQrAccount?.qrImageDataUrl && (
+                    <img
+                      src={ownerWallet.ownerQrAccount.qrImageDataUrl}
+                      alt="Owner NPR QR"
+                      className="h-14 w-14 rounded-xl bg-white p-1 object-contain shrink-0"
+                    />
+                  )}
+                  <div>
+                    <h3 className="text-base font-bold text-neutral-100 flex items-center gap-2">
+                      <Crown className="h-4 w-4 text-amber-400 shrink-0" />
+                      <span>Owner Nepali Currency (NPR ₨) QR Auto-Wire — {ownerRow.name}</span>
+                    </h3>
+                    <p className="text-xs text-neutral-400 mt-0.5">
+                      Every verified real-money payment wires your 3% commission directly to your uploaded QR account in <strong className="text-amber-300">Nepalese Rupees (NPR ₨)</strong> every time
+                    </p>
+                  </div>
                 </div>
 
                 <div className="flex flex-wrap items-center gap-2">
+                  {currentUser.isSiteOwner && onUpdateWallet && (
+                    <label className="flex items-center gap-1.5 rounded-xl bg-amber-500 hover:bg-amber-400 px-3.5 py-2 text-xs font-bold text-neutral-950 transition-colors cursor-pointer">
+                      <Upload className="h-3.5 w-3.5" />
+                      <span>
+                        {ownerWallet.ownerQrAccount?.qrImageDataUrl
+                          ? "Replace My NPR (₨) QR"
+                          : "Upload My NPR (₨) QR"}
+                      </span>
+                      <input
+                        type="file"
+                        accept="image/*"
+                        onChange={handleQuickUploadOwnerNprQr}
+                        className="hidden"
+                      />
+                    </label>
+                  )}
+
+                  {currentUser.isSiteOwner && onOpenOwnerAccountUploads && (
+                    <button
+                      onClick={onOpenOwnerAccountUploads}
+                      className="flex items-center gap-1.5 rounded-xl border border-neutral-700 bg-neutral-900 hover:bg-neutral-800 px-3.5 py-2 text-xs font-semibold text-neutral-200 transition-colors cursor-pointer"
+                    >
+                      <FileText className="h-3.5 w-3.5 text-amber-400" />
+                      <span>Owner Docs &amp; Images</span>
+                    </button>
+                  )}
+
                   <button
                     onClick={() => {
                       onClose();
                       onOpenWallet("withdraw");
                     }}
-                    className="flex items-center gap-1.5 rounded-xl bg-emerald-500 hover:bg-emerald-400 px-3.5 py-2 text-xs font-bold text-neutral-950 transition-colors cursor-pointer"
+                    className="flex items-center gap-1.5 rounded-xl border border-amber-500/40 bg-neutral-950 hover:bg-neutral-800 px-3.5 py-2 text-xs font-semibold text-amber-300 transition-colors cursor-pointer"
                   >
-                    <Smartphone className="h-3.5 w-3.5" />
-                    <span>{hasOwnerPayoutMethod ? "Manage Digital Wallet / Bank" : "+ Add Digital Wallet or Any Bank"}</span>
+                    <QrCode className="h-3.5 w-3.5" />
+                    <span>QR &amp; Payout Settings</span>
                     <ArrowUpRight className="h-3.5 w-3.5" />
                   </button>
                 </div>
               </div>
 
+              {inlineQrSavedNotice && (
+                <div className="rounded-xl border border-emerald-500/40 bg-emerald-950/30 p-3 text-xs text-emerald-300 flex items-center gap-2">
+                  <CheckCircle2 className="h-4 w-4 shrink-0 text-emerald-400" />
+                  <span>{inlineQrSavedNotice}</span>
+                </div>
+              )}
+
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
                 <div className="space-y-1">
-                  <div className="text-xs text-neutral-400">3% Platform Commission Earned</div>
+                  <div className="text-xs text-neutral-400">3% Owner Commission Wired in Nepali Currency</div>
                   <div className="text-lg font-bold font-mono tabular-nums text-amber-300">
-                    {formatLocalCurrency(convertUsdToCurrency(ownerRow.platformFeesUsd, preferredCurrency), preferredCurrency)}
+                    {formatLocalCurrency(Math.round(ownerRow.platformFeesUsd * EXCHANGE_RATES.NPR.rate * 100) / 100, "NPR")}
                   </div>
                   <div className="text-[11px] text-neutral-500 font-mono tabular-nums">
-                    ${ownerRow.platformFeesUsd.toFixed(2)} USD · {formatLocalCurrency(Math.round(ownerRow.platformFeesUsd * EXCHANGE_RATES.NPR.rate * 100) / 100, "NPR")}
+                    Nepalese Rupees (NPR) · ${ownerRow.platformFeesUsd.toFixed(2)} USD eqv
                   </div>
                 </div>
 
@@ -982,24 +1065,28 @@ export const EarningsDashboardModal: React.FC<EarningsDashboardModalProps> = ({
                     )}
                   </div>
                   <div className="text-[11px] text-neutral-500">
-                    Direct buyouts, 15% royalties &amp; tasks
+                    Receipt-verified buyouts, 15% royalties &amp; tasks
                   </div>
                 </div>
 
                 <div className="space-y-1">
-                  <div className="text-xs text-neutral-400">Linked Payout Destination</div>
+                  <div className="text-xs text-neutral-400">Owner Nepali Currency (NPR ₨) QR Destination</div>
                   <div className="text-sm font-semibold text-neutral-200 flex items-center gap-1.5">
-                    <Building2 className="h-3.5 w-3.5 text-sky-400 shrink-0" />
+                    <QrCode className="h-3.5 w-3.5 text-amber-400 shrink-0" />
                     <span>
-                      {hasOwnerPayoutMethod
+                      {ownerWallet.ownerQrAccount
+                        ? `${ownerWallet.ownerQrAccount.qrProviderName} (NPR ₨ Auto-Wire Active)`
+                        : hasOwnerPayoutMethod
                         ? `${primaryOwnerMethod.providerName} (${primaryOwnerMethod.type === "bank" ? "Bank" : "Digital Wallet"})`
-                        : "None Added Yet (Your Choice)"}
+                        : "Upload Your NPR ₨ QR Above"}
                     </span>
                   </div>
                   <div className="text-[11px] text-neutral-400">
-                    {hasOwnerPayoutMethod
+                    {ownerWallet.ownerQrAccount
+                      ? `${ownerWallet.ownerQrAccount.qrAccountId} · Locked to NPR (₨)`
+                      : hasOwnerPayoutMethod
                       ? `${primaryOwnerMethod.accountIdentifier} · ${primaryOwnerMethod.currency}`
-                      : "Add any Digital Wallet or any Bank Account you personally use"}
+                      : "Every real-money transaction wires your 3% commission in Nepalese Rupees (NPR ₨)"}
                   </div>
                 </div>
               </div>

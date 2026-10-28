@@ -13,18 +13,19 @@ export const EXCHANGE_RATES: Record<CurrencyCode, { rate: number; symbol: string
   JPY: { rate: 155.0, symbol: "¥", label: "JPY - Japanese Yen (円)", country: "Japan", flag: "🇯🇵" },
 };
 
-// Platform Owner Real-Money Multi-Currency Account (Medha Koirala)
+// Platform Owner QR Auto-Wire Account (Medha Koirala — Always Wired in Nepali Currency NPR ₨)
 export const PLATFORM_OWNER_WALLET = {
-  walletId: "VAULT-MK-977-MASTER-001",
-  vaultAccountId: "VAULT-MK-977-MASTER-001",
-  accountName: "Medha Koirala (Founder & Owner • Copyright Proprietor of the App/Site)",
+  walletId: "OWNER-NPR-QR-WIRE-001",
+  vaultAccountId: "OWNER-NPR-QR-WIRE-001",
+  accountName: "Medha Koirala (Owner Nepali NPR ₨ QR Account)",
   commissionPercent: 3,
-  walletProvider: "Real-Money Multi-Currency Account (ISO-4217 National Currencies Only)",
-  gatewayStatus: "Pre-Launch Ready (Real World Money Only)",
+  settlementCurrency: "NPR" as CurrencyCode,
+  walletProvider: "Owner QR Account (Automatic Wire in Nepali Currency NPR ₨)",
+  gatewayStatus: "Automatic Wire in Nepali Rupees (NPR ₨) on Verified Real-Money Payments",
   phone: "+977 9767653245",
   supportedWithdrawals: [
-    "Any Digital Wallet Chosen by Owner",
-    "Any Domestic or International Bank Account Chosen by Owner"
+    "Automatic Direct Wire to Owner's Uploaded QR Account in Nepali Currency (NPR ₨)",
+    "Any Digital Wallet or Bank Account Chosen by Owner"
   ],
 };
 
@@ -165,9 +166,66 @@ export function generateCopyrightFiling(
       `this document certifies that the original intellectual property concept titled "${ideaTitle}" is legally filed and registered ` +
       `in the sole name of ${authorName} (${authorCountry}). Full moral and economic ownership is recognized under the United Nations ` +
       `legal order and the laws of Nepal.\n` +
-      `COMMERCIAL TRANSFER PROVISION: The author maintains legal authority to either assign 100% full copyright (with 0% perpetual royalty) ` +
-      `or license production rights under a 15% royalty covenant, subject to a 3% platform discovery fee automatically settled in the IdeaVault Master Digital Wallet (${PLATFORM_OWNER_WALLET.accountName}).`,
+      `MONETIZATION PROVISION: Selected commercial structure: ${
+        saleModel === "keep_copyright"
+          ? "Option 1 — Keep Copyrights + 15% Ongoing Royalty"
+          : saleModel === "full_buyout"
+          ? "Option 2 — Full Copyright Sale / Buyout (0% Royalty)"
+          : saleModel === "licensed_fixed_term"
+          ? "Option 3 — 3-Year Licensed Product with Official Law Draft Strictly Capping 15% Royalty at 1.5 Years (18 Months) Maximum"
+          : "15% Creator Royalty License"
+      }, subject to a 3% platform discovery commission settled only upon completed real-money transactions (${PLATFORM_OWNER_WALLET.accountName}).`,
   };
+}
+
+// Generate Official Law Draft Document for Option 3: 3-Year Licensed Product & Strict 1.5-Year (18-Month) Maximum Royalty Cap
+export function generateFixedTermRoyaltyLawDraft(params: {
+  creatorName?: string;
+  creatorCountry?: string;
+  investorName?: string;
+  ideaTitle?: string;
+  referenceId?: string;
+}): string {
+  const creator = params.creatorName?.trim() || "[Idea Poster / Copyright Licensor]";
+  const country = params.creatorCountry?.trim() || "Nepal";
+  const investor = params.investorName?.trim() || "[Acquiring Investor / Commercial Licensee]";
+  const title = params.ideaTitle?.trim() || "[Licensed Product / Registered Concept]";
+  const refId = params.referenceId || `LAW-DRAFT-18M-${new Date().getFullYear()}-IV`;
+  const issuedDate = new Date().toISOString().split("T")[0];
+
+  return (
+    `OFFICIAL STATUTORY LAW DRAFT DOCUMENT — FIXED-TERM LICENSED PRODUCT & 1.5-YEAR MAXIMUM ROYALTY COVENANT\n` +
+    `Document Reference: ${refId} | Date Prepared: ${issuedDate}\n` +
+    `Governing Legal Order: Section 19 of Nepal Copyright Act, 2059 (2002), UNCITRAL Model Law on Electronic Commerce (Articles 7 & 11), Nepal Civil Code 2074 (Part 5: Contracts), and WIPO Berne Convention (Articles 2 & 5)\n` +
+    `====================================================================================================\n\n` +
+    `1. CONTRACTING PARTIES:\n` +
+    `   • Licensor (Idea Poster): ${creator} (${country})\n` +
+    `   • Licensee (Commercial Investor / Producer): ${investor}\n` +
+    `   • Subject Intellectual Property: "${title}"\n\n` +
+    `2. THREE-YEAR (3-YEAR) LICENSED PRODUCT COMMERCIALIZATION GRANT:\n` +
+    `   Pursuant to Section 19 of the Nepal Copyright Act 2059, the Licensor grants the Licensee a commercial Licensed Product manufacturing, distribution, and market exploitation license for a commercial product term of three (3) years from the effective execution date.\n\n` +
+    `3. STRICT 1.5-YEAR (18-MONTH) ROYALTY DURATION CAP — AND NO MORE THAN 1.5 YEARS:\n` +
+    `   (a) Active 15% Royalty Window (Months 1 to 18 Only): During the first one and one-half (1.5) years — strictly eighteen (18) consecutive calendar months from initial commercial activation — the Licensor shall receive a fixed fifteen percent (15.0%) gross sales royalty on verified real-money sales of the Licensed Product.\n` +
+    `   (b) Mandatory Statutory Cutoff ("No More Than 1.5 Years"): IT IS EXPRESSLY STIPULATED AND LEGALLY BINDING THAT ROYALTY PAYMENTS SHALL RUN FOR STRICTLY 1.5 YEARS (18 MONTHS) AND NO MORE THAN THAT. Upon the exact expiration of eighteen (18) months (Day 548), the Licensor's royalty entitlement automatically and irrevocably drops to ZERO PERCENT (0.00%).\n` +
+    `   (c) Waiver of Post-18-Month Royalty Claims: Neither the Licensor nor any successor may demand, bill, or claim any royalty, residual, or ongoing commission beyond the 1.5-year (18-month) cap for the remainder of the 3-year licensed product term or thereafter.\n\n` +
+    `4. REAL-MONEY SETTLEMENT & 3% PLATFORM DISCOVERY COMMISSION:\n` +
+    `   All settlements occur strictly in real-world ISO-4217 national currencies to each party's self-selected Digital Wallet or Bank Account. IdeaVault collects its 3.0% platform discovery commission strictly upon completed real-money transactions (15% Licensor / 82% Licensee / 3% Platform during the strictly capped 1.5-year royalty period).\n\n` +
+    `5. ELECTRONIC VALIDITY & DISPUTE RESOLUTION:\n` +
+    `   Executed electronically with SHA-256 timestamp verification under UNCITRAL Electronic Commerce Rules and Nepal Electronic Transactions Act 2063 (Sections 13 & 14).`
+  );
+}
+
+export function downloadLawDraftDocument(filename: string, content: string): void {
+  if (typeof document === "undefined") return;
+  const blob = new Blob([content], { type: "text/plain;charset=utf-8" });
+  const url = URL.createObjectURL(blob);
+  const anchor = document.createElement("a");
+  anchor.href = url;
+  anchor.download = filename;
+  document.body.appendChild(anchor);
+  anchor.click();
+  document.body.removeChild(anchor);
+  URL.revokeObjectURL(url);
 }
 
 // Pre-launch: No fictional human buyers or human payments exist until the site is published live

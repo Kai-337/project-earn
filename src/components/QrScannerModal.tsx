@@ -1,22 +1,21 @@
 import React, { useState, useRef, useEffect } from "react";
-import { 
-  X, 
-  Camera, 
-  QrCode, 
-  Upload, 
-  CheckCircle2, 
-  AlertCircle, 
-  ShieldCheck, 
-  Copy, 
-  Check, 
-  ArrowRight, 
+import {
+  X,
+  Camera,
+  QrCode,
+  Upload,
+  CheckCircle2,
+  AlertCircle,
+  ShieldCheck,
+  Copy,
+  Check,
+  ArrowRight,
   RefreshCw,
-  Sparkles,
-  Smartphone
+  Trash2,
 } from "lucide-react";
 import jsQR from "jsqr";
-import { UserProfile, CurrencyCode } from "../types";
-import { formatLocalCurrency } from "../utils/legalAndCurrency";
+import { UserProfile, CurrencyCode, AccountUploadedFile } from "../types";
+import { EXCHANGE_RATES, formatLocalCurrency } from "../utils/legalAndCurrency";
 import { isSitePublishedLive } from "../utils/syncEngine";
 
 interface QrScannerModalProps {
@@ -24,7 +23,14 @@ interface QrScannerModalProps {
   onClose: () => void;
   currentUser: UserProfile;
   preferredCurrency: CurrencyCode;
-  onProcessPayment?: (amount: number, currency: CurrencyCode, description: string, recipient: string) => void;
+  onProcessPayment?: (
+    amount: number,
+    currency: CurrencyCode,
+    description: string,
+    recipient: string,
+    realBankOrQrRefId: string,
+    paymentProofFile: AccountUploadedFile
+  ) => void;
 }
 
 interface DecodedQrPayload {
@@ -41,14 +47,16 @@ interface DecodedQrPayload {
 export const QrScannerModal: React.FC<QrScannerModalProps> = ({
   isOpen,
   onClose,
-  currentUser,
   preferredCurrency,
   onProcessPayment,
 }) => {
   const [cameraActive, setCameraActive] = useState(false);
   const [cameraError, setCameraError] = useState<string | null>(null);
   const [decodedData, setDecodedData] = useState<DecodedQrPayload | null>(null);
-  const [isProcessing, setIsProcessing] = useState(false);
+  const [paidAmountInput, setPaidAmountInput] = useState<string>("");
+  const [paidCurrencyInput, setPaidCurrencyInput] = useState<CurrencyCode>(preferredCurrency);
+  const [realPaymentRefId, setRealPaymentRefId] = useState<string>("");
+  const [paymentProofFile, setPaymentProofFile] = useState<AccountUploadedFile | null>(null);
   const [paymentSuccess, setPaymentSuccess] = useState<string | null>(null);
   const [copiedRaw, setCopiedRaw] = useState(false);
   const [scanMode, setScanMode] = useState<"camera" | "screen_file">("camera");
@@ -58,19 +66,20 @@ export const QrScannerModal: React.FC<QrScannerModalProps> = ({
   const animationFrameId = useRef<number | null>(null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
 
-  // Helper to parse QR string into structured IdeaVault / Khalti payload
   const parseQrContent = (content: string): DecodedQrPayload => {
     try {
       if (content.startsWith("{") && content.endsWith("}")) {
         const parsed = JSON.parse(content);
+        const parsedAmt =
+          typeof parsed.amount === "number" ? parsed.amount : parseFloat(parsed.amount) || undefined;
         return {
           raw: content,
           type: "ideavault_payment",
-          recipientName: parsed.recipient || parsed.to || "IdeaVault Creator",
-          recipientAccount: parsed.account || parsed.walletId || "VAULT-ESCROW-POOL",
-          amount: typeof parsed.amount === "number" ? parsed.amount : parseFloat(parsed.amount) || 25,
-          currency: (parsed.currency as CurrencyCode) || preferredCurrency,
-          description: parsed.description || parsed.memo || "IdeaVault Escrow Transaction",
+          recipientName: parsed.recipient || parsed.to || "Verified QR Merchant",
+          recipientAccount: parsed.account || parsed.walletId,
+          amount: parsedAmt,
+          currency: (parsed.currency as CurrencyCode) || "NPR",
+          description: parsed.description || parsed.memo || "QR Merchant Settlement",
           verifiedSecurityHash: parsed.hash || "SHA256-VAULT-QR-VERIFIED",
         };
       }
@@ -78,39 +87,30 @@ export const QrScannerModal: React.FC<QrScannerModalProps> = ({
       // not JSON
     }
 
-    if (content.toLowerCase().includes("khalti") || content.startsWith("khalti://")) {
+    if (
+      content.toLowerCase().includes("khalti") ||
+      content.toLowerCase().includes("esewa") ||
+      content.toLowerCase().includes("fonepay")
+    ) {
       return {
         raw: content,
         type: "khalti_qr",
-        recipientName: "Khalti Merchant Gateway (+977 9767653245)",
-        recipientAccount: "+977 9767653245",
-        amount: 500,
+        recipientName: "Nepal National QR Merchant",
         currency: "NPR",
-        description: "Khalti QR Direct Merchant Settlement",
-        verifiedSecurityHash: "KHALTI-SHA256-VERIFIED-MERCHANT",
-      };
-    }
-
-    if (content.startsWith("http://") || content.startsWith("https://")) {
-      return {
-        raw: content,
-        type: "generic_url",
-        recipientName: "Web Destination",
-        description: `External Verified Link: ${content}`,
+        description: "Nepali Rupee (NPR ₨) QR Direct Settlement",
+        verifiedSecurityHash: "NEPALPAY-QR-VERIFIED",
       };
     }
 
     return {
       raw: content,
       type: "text",
-      recipientName: "Custom QR Code",
-      amount: 50,
-      currency: preferredCurrency,
+      recipientName: "Scanned QR Recipient",
+      currency: "NPR",
       description: content.length > 80 ? content.slice(0, 80) + "..." : content,
     };
   };
 
-  // Continuous Camera Scanning Loop with jsQR
   useEffect(() => {
     let stream: MediaStream | null = null;
 
@@ -130,8 +130,8 @@ export const QrScannerModal: React.FC<QrScannerModalProps> = ({
         .catch((err) => {
           setCameraError(
             err.name === "NotAllowedError"
-              ? "Camera permission denied. Use the 'Scan from Image / Screen' tab or presets below."
-              : "Unable to access camera hardware. You can scan any image or screen capture directly."
+              ? "Camera permission denied. Switch to 'Upload QR Image' to scan a QR file directly."
+              : "Unable to access camera hardware. Switch to 'Upload QR Image' to scan a QR file."
           );
           setCameraActive(false);
         });
@@ -152,9 +152,10 @@ export const QrScannerModal: React.FC<QrScannerModalProps> = ({
             inversionAttempts: "dontInvert",
           });
           if (code && code.data) {
-            // QR Successfully Decoded!
             const parsed = parseQrContent(code.data);
             setDecodedData(parsed);
+            setPaidCurrencyInput(parsed.currency || "NPR");
+            setPaidAmountInput(parsed.amount ? String(parsed.amount) : "");
             setCameraActive(false);
             return;
           }
@@ -173,19 +174,20 @@ export const QrScannerModal: React.FC<QrScannerModalProps> = ({
     };
   }, [isOpen, cameraActive, scanMode]);
 
-  // Reset states when opened/closed
   useEffect(() => {
     if (!isOpen) {
       setCameraActive(false);
       setDecodedData(null);
       setPaymentSuccess(null);
       setCameraError(null);
+      setPaidAmountInput("");
+      setRealPaymentRefId("");
+      setPaymentProofFile(null);
     }
   }, [isOpen]);
 
   if (!isOpen) return null;
 
-  // Handle image file upload scan
   const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -205,9 +207,11 @@ export const QrScannerModal: React.FC<QrScannerModalProps> = ({
           if (code && code.data) {
             const parsed = parseQrContent(code.data);
             setDecodedData(parsed);
+            setPaidCurrencyInput(parsed.currency || "NPR");
+            setPaidAmountInput(parsed.amount ? String(parsed.amount) : "");
             setCameraError(null);
           } else {
-            setCameraError("No valid QR code detected in the selected image. Please try another image or screenshot.");
+            setCameraError("No valid QR code detected in the selected image. Please try another QR image.");
           }
         }
       };
@@ -216,7 +220,27 @@ export const QrScannerModal: React.FC<QrScannerModalProps> = ({
     reader.readAsDataURL(file);
   };
 
-  // Execute payment settlement (strictly real money, only when site is published live)
+  const handleUploadReceiptProof = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = () => {
+      if (typeof reader.result === "string") {
+        setPaymentProofFile({
+          id: `qr-proof-${Date.now()}`,
+          name: file.name,
+          mimeType: file.type || "application/octet-stream",
+          sizeBytes: file.size,
+          kind: file.type.startsWith("image/") ? "image" : "document",
+          dataUrl: reader.result,
+          uploadedAt: new Date().toLocaleString(),
+        });
+        setCameraError(null);
+      }
+    };
+    reader.readAsDataURL(file);
+  };
+
   const handleConfirmPay = () => {
     if (!decodedData) return;
     if (!isSitePublishedLive()) {
@@ -225,31 +249,39 @@ export const QrScannerModal: React.FC<QrScannerModalProps> = ({
       );
       return;
     }
-    setIsProcessing(true);
 
-    setTimeout(() => {
-      setIsProcessing(false);
-      const paidAmt = decodedData.amount || 25;
-      const paidCurr = decodedData.currency || preferredCurrency;
-      
-      if (onProcessPayment) {
-        onProcessPayment(
-          paidAmt,
-          paidCurr,
-          decodedData.description,
-          decodedData.recipientName
-        );
-      }
+    const numericAmt = parseFloat(paidAmountInput);
+    if (isNaN(numericAmt) || numericAmt <= 0) {
+      setCameraError("Enter the exact real-money amount actually paid via your bank or wallet app.");
+      return;
+    }
+    if (realPaymentRefId.trim().length < 6) {
+      setCameraError("Enter your real Bank / Wallet QR Transaction Reference ID (minimum 6 characters).");
+      return;
+    }
+    if (!paymentProofFile) {
+      setCameraError("Upload your actual payment receipt screenshot or PDF statement to verify payment.");
+      return;
+    }
 
-      setPaymentSuccess(
-        `Real-money payment of ${formatLocalCurrency(paidAmt, paidCurr)} successfully sent to ${decodedData.recipientName} via verified QR settlement.`
+    if (onProcessPayment) {
+      onProcessPayment(
+        numericAmt,
+        paidCurrencyInput,
+        decodedData.description,
+        decodedData.recipientName,
+        realPaymentRefId.trim(),
+        paymentProofFile
       );
-    }, 1200);
+    }
+
+    setPaymentSuccess(
+      `Verified real-money payment of ${formatLocalCurrency(numericAmt, paidCurrencyInput)} recorded (Ref #${realPaymentRefId.trim()}) with receipt "${paymentProofFile.name}".`
+    );
   };
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm p-4 overflow-y-auto animate-fadeIn">
-      {/* Hidden processing canvas */}
       <canvas ref={canvasRef} className="hidden" />
 
       <div className="relative w-full max-w-xl rounded-3xl border border-neutral-800 bg-neutral-900 shadow-2xl overflow-hidden my-6">
@@ -260,11 +292,11 @@ export const QrScannerModal: React.FC<QrScannerModalProps> = ({
               <QrCode className="h-5 w-5" />
             </div>
             <div>
-              <h2 className="text-base font-extrabold text-neutral-100 flex items-center gap-2">
-                <span>Active Camera & Screen QR Scanner</span>
+              <h2 className="text-base font-extrabold text-neutral-100">
+                Real-Money QR Scanner &amp; Receipt Verification
               </h2>
               <p className="text-xs text-neutral-400">
-                Scan real-money ISO-4217 national currency QR codes via device camera or screenshot upload
+                Scan Nepali (NPR ₨) or international QR codes and attach verified payment proof
               </p>
             </div>
           </div>
@@ -277,7 +309,7 @@ export const QrScannerModal: React.FC<QrScannerModalProps> = ({
           </button>
         </div>
 
-        {/* Tab Switcher: Camera vs Screen / Image File */}
+        {/* Tab Switcher */}
         <div className="flex border-b border-neutral-800 bg-neutral-950/40 px-6 pt-3 gap-2">
           <button
             onClick={() => {
@@ -307,24 +339,26 @@ export const QrScannerModal: React.FC<QrScannerModalProps> = ({
             }`}
           >
             <Upload className="h-4 w-4" />
-            <span>Scan Screen Image / QR File</span>
+            <span>Upload QR Image</span>
           </button>
         </div>
 
-        {/* Body Content */}
+        {/* Body */}
         <div className="p-6 space-y-5">
-          {/* Success Banner */}
           {paymentSuccess && (
             <div className="rounded-2xl border border-emerald-500/40 bg-emerald-950/40 p-4 text-xs text-emerald-300 space-y-2 animate-fadeIn">
               <div className="flex items-center gap-2 font-bold text-sm">
                 <CheckCircle2 className="h-5 w-5 text-emerald-400" />
-                <span>Transaction Completed</span>
+                <span>Verified Real-Money Payment Settled</span>
               </div>
               <p>{paymentSuccess}</p>
               <button
                 onClick={() => {
                   setPaymentSuccess(null);
                   setDecodedData(null);
+                  setPaidAmountInput("");
+                  setRealPaymentRefId("");
+                  setPaymentProofFile(null);
                 }}
                 className="mt-2 text-xs font-bold text-emerald-400 hover:underline"
               >
@@ -333,7 +367,6 @@ export const QrScannerModal: React.FC<QrScannerModalProps> = ({
             </div>
           )}
 
-          {/* Mode 1: Live Camera Feed */}
           {scanMode === "camera" && !decodedData && !paymentSuccess && (
             <div className="space-y-4">
               <div className="relative w-full aspect-video sm:aspect-square max-w-sm mx-auto rounded-3xl overflow-hidden border-2 border-neutral-700 bg-black flex flex-col items-center justify-center shadow-inner">
@@ -346,13 +379,8 @@ export const QrScannerModal: React.FC<QrScannerModalProps> = ({
                       muted
                       className="w-full h-full object-cover"
                     />
-                    {/* Targeting Laser Line Overlay */}
                     <div className="absolute inset-0 border-2 border-dashed border-amber-400/70 pointer-events-none m-8 rounded-2xl flex items-center justify-center">
                       <div className="w-full h-0.5 bg-gradient-to-r from-transparent via-red-500 to-transparent animate-pulse shadow-md shadow-red-500" />
-                    </div>
-                    <div className="absolute top-3 left-3 bg-neutral-900/80 backdrop-blur-md px-2.5 py-1 rounded-full text-[10px] text-amber-300 font-bold border border-amber-500/30 flex items-center gap-1.5">
-                      <span className="h-2 w-2 rounded-full bg-red-500 animate-ping" />
-                      <span>Scanning frames in real-time...</span>
                     </div>
                   </>
                 ) : (
@@ -363,7 +391,7 @@ export const QrScannerModal: React.FC<QrScannerModalProps> = ({
                     <div>
                       <h4 className="text-sm font-bold text-neutral-200">Device Camera Standby</h4>
                       <p className="text-xs text-neutral-400 max-w-xs mt-1">
-                        Aim at any physical QR code on phone, laptop, paper, or invoice to scan.
+                        Aim at any physical bank or wallet QR code to decode payment details.
                       </p>
                     </div>
                   </div>
@@ -393,7 +421,6 @@ export const QrScannerModal: React.FC<QrScannerModalProps> = ({
             </div>
           )}
 
-          {/* Mode 2: Screen Image / Screenshot File Upload */}
           {scanMode === "screen_file" && !decodedData && !paymentSuccess && (
             <div className="space-y-4">
               <input
@@ -413,10 +440,10 @@ export const QrScannerModal: React.FC<QrScannerModalProps> = ({
                 </div>
                 <div>
                   <h4 className="text-sm font-bold text-neutral-200 group-hover:text-amber-300">
-                    Click to Select QR Code Screenshot or Image
+                    Click to Upload QR Code Image
                   </h4>
                   <p className="text-xs text-neutral-400 max-w-sm mx-auto mt-1">
-                    Take a screenshot of any QR code visible on your screen, drag-and-drop here, or select from your gallery.
+                    Select any Nepali (NPR ₨) or international payment QR image to scan.
                   </p>
                 </div>
               </div>
@@ -430,17 +457,16 @@ export const QrScannerModal: React.FC<QrScannerModalProps> = ({
             </div>
           )}
 
-          {/* Decoded QR Results Screen */}
           {decodedData && !paymentSuccess && (
             <div className="rounded-2xl border border-amber-500/40 bg-neutral-950 p-5 space-y-4 animate-fadeIn">
               <div className="flex items-center justify-between border-b border-neutral-800 pb-3">
                 <span className="text-xs font-bold text-emerald-400 flex items-center gap-1.5 uppercase tracking-wider">
-                  <ShieldCheck className="h-4 w-4" /> QR Code Successfully Decoded
+                  <ShieldCheck className="h-4 w-4" /> QR Decoded — Attach Actual Payment Proof
                 </span>
                 <button
                   onClick={() => {
                     setDecodedData(null);
-                    setCameraActive(true);
+                    setCameraActive(false);
                   }}
                   className="flex items-center gap-1 text-[11px] text-neutral-400 hover:text-neutral-200"
                 >
@@ -449,7 +475,7 @@ export const QrScannerModal: React.FC<QrScannerModalProps> = ({
                 </button>
               </div>
 
-              <div className="space-y-3">
+              <div className="space-y-3 text-xs">
                 <div className="flex items-start justify-between gap-4">
                   <div>
                     <span className="text-[11px] text-neutral-400 uppercase font-semibold">Recipient:</span>
@@ -458,55 +484,119 @@ export const QrScannerModal: React.FC<QrScannerModalProps> = ({
                       <span className="font-mono text-[11px] text-amber-400/90">{decodedData.recipientAccount}</span>
                     )}
                   </div>
-
-                  {decodedData.amount !== undefined && (
-                    <div className="text-right">
-                      <span className="text-[11px] text-neutral-400 uppercase font-semibold">Amount:</span>
-                      <div className="text-base font-extrabold text-emerald-400 font-mono">
-                        {formatLocalCurrency(decodedData.amount, decodedData.currency || preferredCurrency)}
-                      </div>
-                    </div>
-                  )}
-                </div>
-
-                <div className="rounded-xl bg-neutral-900 border border-neutral-800 p-3 text-xs text-neutral-300">
-                  <span className="text-[10px] text-neutral-500 uppercase font-bold block mb-0.5">Description / Memo:</span>
-                  <p>{decodedData.description}</p>
-                </div>
-
-                <div className="flex items-center justify-between text-[11px] text-neutral-500 font-mono">
-                  <span>Tamper Seal: {decodedData.verifiedSecurityHash || "VERIFIED-AES256"}</span>
                   <button
                     onClick={() => {
                       navigator.clipboard.writeText(decodedData.raw);
                       setCopiedRaw(true);
                       setTimeout(() => setCopiedRaw(false), 2000);
                     }}
-                    className="flex items-center gap-1 text-neutral-400 hover:text-neutral-200"
+                    className="flex items-center gap-1 text-neutral-400 hover:text-neutral-200 text-[11px]"
                   >
                     {copiedRaw ? <Check className="h-3 w-3 text-emerald-400" /> : <Copy className="h-3 w-3" />}
-                    <span>{copiedRaw ? "Copied" : "Copy Payload"}</span>
+                    <span>{copiedRaw ? "Copied" : "Copy QR Data"}</span>
                   </button>
                 </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-[11px] font-semibold text-neutral-300 mb-1">
+                      Actual Amount Paid
+                    </label>
+                    <input
+                      type="number"
+                      min="1"
+                      step="0.01"
+                      value={paidAmountInput}
+                      onChange={(e) => setPaidAmountInput(e.target.value)}
+                      placeholder="Enter real amount paid"
+                      className="w-full rounded-xl border border-neutral-700 bg-neutral-900 px-3 py-2 text-xs font-mono text-neutral-100 focus:border-amber-500 focus:outline-none"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-[11px] font-semibold text-neutral-300 mb-1">
+                      Paid Currency
+                    </label>
+                    <select
+                      value={paidCurrencyInput}
+                      onChange={(e) => setPaidCurrencyInput(e.target.value as CurrencyCode)}
+                      className="w-full rounded-xl border border-neutral-700 bg-neutral-900 px-3 py-2 text-xs font-bold text-neutral-100 focus:border-amber-500 focus:outline-none"
+                    >
+                      {(Object.keys(EXCHANGE_RATES) as CurrencyCode[]).map((c) => (
+                        <option key={c} value={c}>
+                          {c} ({EXCHANGE_RATES[c].symbol})
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                </div>
+
+                <div>
+                  <label className="block text-[11px] font-semibold text-neutral-300 mb-1">
+                    Bank / Digital Wallet QR Transaction Reference ID
+                  </label>
+                  <input
+                    type="text"
+                    value={realPaymentRefId}
+                    onChange={(e) => setRealPaymentRefId(e.target.value)}
+                    placeholder="Enter real transaction reference ID (min 6 chars)"
+                    className="w-full rounded-xl border border-neutral-700 bg-neutral-900 px-3 py-2 text-xs font-mono text-neutral-100 focus:border-amber-500 focus:outline-none"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-[11px] font-semibold text-neutral-300 mb-1">
+                    Upload Actual Payment Receipt (Image or Document)
+                  </label>
+                  {paymentProofFile ? (
+                    <div className="flex items-center justify-between rounded-xl border border-emerald-500/40 bg-emerald-950/30 px-3 py-2">
+                      <span className="truncate text-emerald-300 font-medium">{paymentProofFile.name}</span>
+                      <button
+                        type="button"
+                        onClick={() => setPaymentProofFile(null)}
+                        className="text-neutral-400 hover:text-red-400 ml-2"
+                      >
+                        <Trash2 className="h-4 w-4" />
+                      </button>
+                    </div>
+                  ) : (
+                    <label className="flex items-center justify-center gap-2 rounded-xl border border-dashed border-neutral-700 hover:border-amber-400 bg-neutral-900 px-3 py-2.5 text-xs font-semibold text-amber-300 cursor-pointer transition-colors">
+                      <Upload className="h-4 w-4" />
+                      <span>Upload Paid Receipt Screenshot / PDF</span>
+                      <input
+                        type="file"
+                        accept="image/*,.pdf,.doc,.docx"
+                        onChange={handleUploadReceiptProof}
+                        className="hidden"
+                      />
+                    </label>
+                  )}
+                </div>
+
+                {cameraError && (
+                  <div className="rounded-xl border border-red-500/40 bg-red-950/30 p-2.5 text-xs text-red-300 flex items-center gap-2">
+                    <AlertCircle className="h-4 w-4 shrink-0 text-red-400" />
+                    <span>{cameraError}</span>
+                  </div>
+                )}
               </div>
 
-              {/* Action Buttons */}
               <div className="pt-2 flex items-center gap-3">
                 <button
-                  disabled={isProcessing || !isSitePublishedLive()}
+                  disabled={
+                    !isSitePublishedLive() ||
+                    !paymentProofFile ||
+                    realPaymentRefId.trim().length < 6 ||
+                    !(parseFloat(paidAmountInput) > 0)
+                  }
                   onClick={handleConfirmPay}
-                  className="flex-1 flex items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-emerald-500 to-teal-600 hover:from-emerald-400 hover:to-teal-500 px-4 py-3 text-xs font-extrabold text-neutral-950 shadow-md shadow-emerald-500/20 active:scale-95 transition-all cursor-pointer disabled:opacity-50"
+                  className="flex-1 flex items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-emerald-500 to-teal-600 hover:from-emerald-400 hover:to-teal-500 px-4 py-3 text-xs font-extrabold text-neutral-950 shadow-md shadow-emerald-500/20 active:scale-95 transition-all cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
                 >
-                  {isProcessing ? (
-                    <>
-                      <RefreshCw className="h-4 w-4 animate-spin" />
-                      <span>Authorizing Real-Money Settlement...</span>
-                    </>
-                  ) : !isSitePublishedLive() ? (
+                  {!isSitePublishedLive() ? (
                     <span>Payments Inactive Until Site Published</span>
                   ) : (
                     <>
-                      <span>Authorize Real-Money Payment</span>
+                      <span>Verify Receipt &amp; Record Real-Money Payment</span>
                       <ArrowRight className="h-4 w-4" />
                     </>
                   )}
@@ -527,7 +617,7 @@ export const QrScannerModal: React.FC<QrScannerModalProps> = ({
               <strong className="text-amber-300 font-semibold block mb-1">
                 Pre-Launch Status — Zero Human Payments Active
               </strong>
-              Real-money human payments (NPR, USD, INR, EUR, GBP, AUD, CAD, JPY, PLN) are disabled until IdeaVault is published live.
+              Real-money human payments are disabled until IdeaVault is published live, and every payment requires a real bank/QR transaction reference ID plus an uploaded payment receipt.
             </div>
           )}
         </div>

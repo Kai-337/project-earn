@@ -1,6 +1,6 @@
 {
   "name": "Idea Exchange & Task Marketplace",
-  "description": "Social marketplace enabling non-tech and tech creators to monetize ideas with automatic AI categorization, For You feed, binding 15% ideator royalty contracts, 3% platform discovery commission, and safety moderation.",
+  "description": "IdeaVault marketplace where Idea Posters pitch original concepts for free and Investors license or acquire ideas via 15% royalties or full buyouts.",
   "requestFramePermissions": [],
   "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
 }
